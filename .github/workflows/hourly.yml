@@ -1,0 +1,24 @@
+name: Hourly Update
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'    # 每小时整点
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install beautifulsoup4 requests lxml
+      - name: Run update
+        run: python scripts/update.py
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          git add -A
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update $(date)" && git push)

@@ -1,0 +1,8 @@
+body { font-family: "Microsoft YaHei", sans-serif; margin: 0; padding: 20px; background: #f8f9fa; }
+h1 { text-align: center; color: #e91e63; }
+p { text-align: center; color: #666; }
+ul.feed { max-width: 900px; margin: 0 auto; padding: 0; }
+ul.feed li { list-style: none; padding: 12px 0; border-bottom: 1px solid #eee; font-size: 18px; }
+ul.feed li a { color: #e91e63; text-decoration: none; }
+ul.feed li a:hover { text-decoration: underline; }
+footer { text-align: center; margin-top: 50px; color: #999; font-size: 14px; }

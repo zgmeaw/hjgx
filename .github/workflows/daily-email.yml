@@ -1,0 +1,15 @@
+name: Daily Email
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 14 * * *'    # UTC 14点 = 北京22点
+jobs:
+  email:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send email
+        env:
+          QQ_MAIL: ${{ secrets.QQ_MAIL }}
+          QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
+        run: python scripts/send_email.py
