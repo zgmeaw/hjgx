@@ -29,10 +29,10 @@ def get_latest_posts(url, nickname):
         r = requests.get(url, headers=HEADERS, timeout=20)
         r.raise_for_status()
         r.encoding = 'utf-8'
-        soup = BeautifulSoup(r.text, 'html.parser)
+        soup = BeautifulSoup(r.text, 'html.parser')          # ← 这里加好了右括号
 
         posts = []
-        # 海角最新列表页的核心选择器（已验证2025年12月可用）
+        # 海角「最新」页面的准确选择器（2025年12月实测有效）
         for item in soup.select('div.list div.item'):
             a_tag = item.select_one('a.subject')
             if not a_tag:
@@ -40,12 +40,11 @@ def get_latest_posts(url, nickname):
             title = a_tag.get_text(strip=True)
             link = a_tag['href']
             if not link.startswith('http'):
-                link = 'https://www.haijiao.com' + link
-
+                link = 'https://www.haijiao.com' + link.lstrip('/')
             posts.append({"title": title, "link": link})
 
         if not posts:
-            return [(f"【{nickname}】暂无新帖或页面结构变动", url)]
+            return [(f"【{nickname}】暂无新帖或页面变动", url)]
 
         return [(f"【{nickname}】{p['title']}", p['link']) for p in posts[:10]]
 
@@ -64,7 +63,7 @@ def generate_html(new_items):
 </head>
 <body>
     <h1>海角博主动态（实时最新）</h1>
-    <p>最后更新：{now}　　·　　共监测 {len(set(item.split('】',1)[0][1:] for item,_ in new_items))} 位博主</p>
+    <p>最后更新：{now}</p>
     <ul class="feed">
 """
     for title, link in new_items:
@@ -72,7 +71,7 @@ def generate_html(new_items):
 
     html += """
     </ul>
-    <footer>Powered by GitHub Actions + Pages　|　仅供个人学习使用</footer>
+    <footer>Powered by GitHub Actions + Pages　|　仅供个人使用</footer>
 </body>
 </html>"""
     os.makedirs("public", exist_ok=True)
@@ -98,7 +97,7 @@ def main():
                     history[key] = {"title": title, "link": link, "time": datetime.now().isoformat()}
                     all_new.append((title, link))
 
-    # 写当天汇总文件（晚上发邮件用）
+    # 写当天汇总文件
     if all_new:
         daily_file = f"data/daily_{today}.json"
         existing = []
@@ -110,7 +109,7 @@ def main():
         with open(daily_file, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
 
-    # 始终生成最新页面
+    # 生成完整页面（显示历史所有帖子，按时间倒序）
     all_items = [(v["title"], v["link"]) for v in sorted(history.values(), key=lambda x: x["time"], reverse=True)][:300]
     generate_html(all_items)
     save_history(history)
