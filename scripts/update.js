@@ -1,4 +1,4 @@
-// scripts/update.js —— Puppeteer 版（模拟浏览器，100% 绕过 Cloudflare）
+// scripts/update.js —— 终极修复版（titlerow + createTime + attachments 支持）
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +20,7 @@ async function getBloggers() {
   const bloggers = [];
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/chromium-browser',  // Actions 环境路径
+    executablePath: '/usr/bin/chromium-browser',
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
   });
 
@@ -29,7 +29,7 @@ async function getBloggers() {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // 提取昵称
+    // 提取昵称（保持不变，已正确）
     let nickname = '未知用户';
     try {
       nickname = await page.evaluate(() => {
@@ -41,27 +41,31 @@ async function getBloggers() {
       console.log(`昵称提取失败 for ${url}: ${e.message}`);
     }
 
-    // 提取帖子
+    // 提取帖子（新选择器：titlerow 标题 + createTime 时间 + attachments 图片）
     const posts = await page.evaluate(() => {
-      const items = Array.from(document.querySelectorAll('div.list div.item')).slice(0, 5);
-      const today = new Date().toISOString().slice(5, 10);  // mm-dd
+      const items = Array.from(document.querySelectorAll('.titlerow')).slice(0, 5);  // 用 titlerow 作为帖子行
+      const today = new Date().toISOString().slice(5, 10);  // mm-dd 如 12-03
       return items.map(item => {
-        const a = item.querySelector('a.subject');
-        const timeEl = item.querySelector('span.date, span.gray, .time');
-        if (!a) return null;
+        const titleEl = item.querySelector('a');  // titlerow 下的 a 标签是标题
+        const timeEl = document.querySelector('.createTime');  // createTime class 为时间（取最近的）
+        const imgContainer = item.querySelector('.attachments');  // attachments class 为图片容器
+        if (!titleEl) return null;
 
-        const title = a.innerText.trim();
-        let link = a.href;
+        const title = titleEl.innerText.trim();
+        let link = titleEl.href;
         if (link.startsWith('/')) link = 'https://www.haijiao.com' + link;
 
         let rawTime = timeEl ? timeEl.innerText.trim() : '';
         let isToday = rawTime.includes(today);
         let displayTime = rawTime;
         if (isToday) {
-          displayTime = rawTime.replace(today, `${new Date().getMonth() + 1}.${new Date().getDate()}`);
+          displayTime = rawTime.replace(today, `${new Date().getMonth() + 1}.${new Date().getDate()}`);  // 12.03
         }
 
-        return { title, link, time: displayTime || '未知', isToday };
+        // 图片：从 attachments 抓 img src
+        const images = imgContainer ? Array.from(imgContainer.querySelectorAll('img')).map(img => img.src) : [];
+
+        return { title, link, time: displayTime || '未知', isToday, images };
       }).filter(p => p);
     });
 
@@ -94,6 +98,7 @@ h1{text-align:center;color:#ff79c6;margin:40px 0}
 .t{color:#ff5555;font-weight:bold}
 .g{color:#888}
 footer{text-align:center;margin:80px 0;color:#666}
+.img{opacity:0.8;max-width:50px;margin-left:10px}
 </style>
 </head>
 <body>
@@ -112,7 +117,8 @@ footer{text-align:center;margin:80px 0;color:#666}
     } else {
       posts.forEach(p => {
         const tc = p.isToday ? 't' : 'g';
-        html += `<div class="p"><a href="${p.link}" target="_blank">${p.title}</a> <span class="${tc}">${p.time}</span></div>`;
+        let imgHtml = p.images.length > 0 ? `<img src="${p.images[0]}" class="img" alt="预览">` : '';  // 显示第一张图片预览
+        html += `<div class="p"><a href="${p.link}" target="_blank">${p.title}</a> <span class="${tc}">${p.time}</span>${imgHtml}</div>`;
       });
     }
     html += '</div>';
