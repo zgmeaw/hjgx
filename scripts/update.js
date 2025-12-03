@@ -1,172 +1,161 @@
-// scripts/update.js —— 回退稳定版 + 仅修复链接和图片
+// scripts/update.js —— 暴力抓取 + 调试诊断版
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 
-// 辅助等待函数
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 async function getBloggers() {
   const linksPath = path.join(__dirname, '../links.txt');
-  if (!fs.existsSync(linksPath)) {
-    console.log('links.txt not found!');
-    return [];
-  }
+  if (!fs.existsSync(linksPath)) return [];
 
   const urls = fs.readFileSync(linksPath, 'utf-8')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'));
-
-  console.log(`计划抓取 ${urls.length} 个链接`);
+    .split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
 
   const browser = await puppeteer.launch({
     headless: "new",
-    // 自动寻找浏览器路径，适配 GitHub Actions
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1920,1080']
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080']
   });
 
   const bloggers = [];
 
   for (const url of urls) {
-    console.log(`正在访问: ${url}`);
+    console.log(`\n>>> 正在访问: ${url}`);
     const page = await browser.newPage();
     
-    // 设置 UA，模拟真实用户
+    // 开启页面控制台日志转发（关键！能在 Action 日志看到浏览器内部报错）
+    page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1920, height: 1080 });
 
     try {
-      // 1. 恢复 networkidle2，确保数据加载完成
+      // 1. 加载页面
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
       
-      // 2. 强制等待 .titlerow 出现 (这是之前成功的关键)
+      // 2. 尝试处理可能的弹窗（如果有）
       try {
-        await page.waitForSelector('.titlerow', { timeout: 20000 });
-        console.log('检测到帖子列表 (.titlerow)');
+        const closeBtn = await page.$('.ant-modal-close, .close-btn');
+        if (closeBtn) {
+          await closeBtn.click();
+          console.log('  已点击关闭弹窗');
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      } catch(e) {}
+
+      // 3. 等待数据区
+      try {
+        // 等待任意一个链接出现，不仅仅是 titlerow
+        await page.waitForSelector('a[href*="details?pid="]', { timeout: 15000 });
       } catch (e) {
-        console.log('等待超时，尝试直接抓取...');
+        console.log('  ⚠️ 等待帖子链接超时，页面可能未加载完成');
       }
 
-      // 3. 提取昵称
-      let nickname = '未知用户';
-      try {
-        nickname = await page.evaluate(() => {
-          const el = document.querySelector('.nickname, h1, .user-name');
-          return el ? el.innerText.trim() : document.title;
-        });
-      } catch (e) {}
-
-      // 4. 提取帖子 (修复链接和图片)
-      const posts = await page.evaluate(() => {
-        const todayStr = new Date().toISOString().slice(5, 10); // "12-03"
-        const items = document.querySelectorAll('.titlerow');
+      // 4. 暴力提取数据
+      const data = await page.evaluate(() => {
         const results = [];
+        const todayStr = new Date().toISOString().slice(5, 10); // "MM-DD"
 
-        items.forEach(item => {
-          if (results.length >= 3) return; // 只取前3条
+        // 策略A: 优先找 .titlerow (你指定的)
+        let rows = Array.from(document.querySelectorAll('.titlerow'));
+        
+        // 策略B: 如果 A 没找到或很少，尝试找所有包含 'pid=' 的链接容器
+        if (rows.length === 0) {
+          console.log('未找到 .titlerow，切换到全局链接搜索模式');
+          // 找到所有帖子链接
+          const links = Array.from(document.querySelectorAll('a[href*="pid="]'));
+          // 向上找父级容器作为 row
+          rows = links.map(link => link.closest('li') || link.closest('div') || link.parentElement);
+          // 去重
+          rows = [...new Set(rows)];
+        } else {
+          console.log(`找到 ${rows.length} 个 .titlerow 元素`);
+          // 调试：打印第一个 row 的 HTML，看看结构到底长啥样
+          if(rows.length > 0) console.log('Row HTML片段:', rows[0].innerHTML.slice(0, 100));
+        }
 
-          // --- 标题 & 链接 ---
-          const linkEl = item.querySelector('a'); 
+        rows.forEach(row => {
+          if (!row || results.length >= 3) return;
+
+          // 找链接
+          const linkEl = row.querySelector('a[href*="pid="]') || row.querySelector('a');
           if (!linkEl) return;
 
           const title = linkEl.innerText.trim();
-          let href = linkEl.getAttribute('href'); 
-          
-          // 【修复1】手动拼接完整域名
-          if (href && href.startsWith('/')) {
-            href = 'https://www.haijiao.com' + href;
-          }
+          if (title.length < 2) return; // 过滤空标题
 
-          // --- 时间 ---
-          let timeEl = item.querySelector('.createTime');
+          // 找时间
+          let timeEl = row.querySelector('.createTime, .time, span.date');
           let rawTime = timeEl ? timeEl.innerText.trim() : '';
-          let isToday = rawTime.includes(todayStr) || rawTime.includes('小时') || rawTime.includes('分');
-
-          // --- 图片 ---
+          
+          // 找图片 (data-src 或 src)
           let imgArr = [];
-          const attachEl = item.querySelector('.attachments');
-          if (attachEl) {
-             const imgs = attachEl.querySelectorAll('img');
-             imgs.forEach(img => {
-                 // 【修复2】优先取 data-src，因为海角用懒加载
-                 let src = img.getAttribute('data-src') || img.getAttribute('src');
-                 if (src && !src.includes('loading')) {
-                    imgArr.push(src);
-                 }
-             });
-          }
+          const imgs = row.querySelectorAll('img');
+          imgs.forEach(img => {
+            let src = img.getAttribute('data-src') || img.getAttribute('src');
+            if (src && !src.includes('loading') && src.length > 20) {
+              imgArr.push(src);
+            }
+          });
 
-          if (title) {
-            results.push({
-              title,
-              link: href,
-              time: rawTime,
-              isToday,
-              images: imgArr
-            });
-          }
+          // 修正链接
+          let href = linkEl.getAttribute('href');
+          if (href && !href.startsWith('http')) href = 'https://www.haijiao.com' + href;
+
+          results.push({
+            title,
+            link: href,
+            time: rawTime || '未知时间',
+            images: imgArr,
+            isToday: rawTime.includes(todayStr) || rawTime.includes('小时')
+          });
         });
+
         return results;
       });
 
-      console.log(`抓取成功: ${nickname} - ${posts.length} 条`);
-      bloggers.push({ nickname, posts, homeLink: url });
+      // 获取昵称
+      const nickname = await page.evaluate(() => {
+        const el = document.querySelector('h1, .nickname, .user-name');
+        return el ? el.innerText.trim() : '海角博主';
+      });
+
+      console.log(`  -> 抓取结果: ${nickname} - ${data.length} 条`);
+      
+      // 如果依然是 0 条，截图！
+      if (data.length === 0) {
+        console.log('  ⚠️ 抓取数为0，正在截图 debug_error.jpg ...');
+        await page.screenshot({ path: 'debug_error.jpg', fullPage: true });
+        // 打印页面body文字，看看是否有 "登录" 或 "权限" 字样
+        const bodyText = await page.evaluate(() => document.body.innerText.slice(0, 200));
+        console.log('  页面前200字:', bodyText.replace(/\n/g, ' '));
+      } else {
+         console.log(`     首条: ${data[0].title}`);
+      }
+
+      bloggers.push({ nickname, posts: data });
 
     } catch (err) {
-      console.error(`处理失败: ${url}`, err.message);
+      console.error(`  ❌ 错误: ${err.message}`);
     } finally {
       await page.close();
     }
   }
 
   await browser.close();
-  return bloggers;
-}
-
-function generateHTML(bloggers) {
-  const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   
-  // 这里使用了你之前觉得太丑的HTML结构，但为了先确保功能，我只改了 href 跳转
-  let html = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>海角监控</title>
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-<h1>海角监控站</h1>
-<p>更新时间：${now}</p>
-<ul class="feed">`;
-
-  bloggers.forEach(({ nickname, posts }) => {
-    html += `<h3>${nickname}</h3>`;
-    posts.forEach(p => {
-      // 图片显示逻辑
-      let imgHtml = '';
-      if(p.images.length > 0) {
-        // referrerpolicy="no-referrer" 是为了解决图片403不显示的问题
-        imgHtml = `<br><img src="${p.images[0]}" style="max-height:100px;border-radius:5px;margin-top:5px;" referrerpolicy="no-referrer">`;
-      }
-      
-      html += `<li>
-        <a href="${p.link}" target="_blank">
-           [${p.time}] ${p.title} 
-        </a>
-        ${imgHtml}
-      </li>`;
+  // 生成 HTML (保持简单，先看数据)
+  let html = `<!DOCTYPE html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>body{padding:20px;font-family:sans-serif}img{max-width:100px;border-radius:5px;display:block;margin:5px 0}a{text-decoration:none;color:#d63031;font-size:16px;font-weight:bold}.item{border-bottom:1px solid #eee;padding:10px 0}.time{font-size:12px;color:#888}</style>`;
+  
+  bloggers.forEach(b => {
+    html += `<h3>${b.nickname}</h3>`;
+    if(b.posts.length===0) html += `<p style="color:red">⚠️ 未获取到数据，请检查Artifacts截图</p>`;
+    b.posts.forEach(p => {
+      let imgs = p.images.slice(0,3).map(src => `<img src="${src}" referrerpolicy="no-referrer">`).join('');
+      html += `<div class="item"><a href="${p.link}" target="_blank">${p.title}</a><div class="time">${p.time}</div>${imgs}</div>`;
     });
   });
-
-  html += `</ul><footer>Powered by GitHub Actions</footer></body></html>`;
+  
   fs.writeFileSync('index.html', html);
+  console.log('HTML 已生成');
 }
 
-async function main() {
-  const bloggers = await getBloggers();
-  generateHTML(bloggers);
-}
-
-main().catch(console.error);
+main();
