@@ -2,7 +2,7 @@ name: Hourly Update
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # 每小时
 
 jobs:
   update:
@@ -10,21 +10,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: '20'
 
-      - name: Install cloudscraper + bs4
+      - name: Install Puppeteer dependencies
         run: |
-          pip install cloudscraper beautifulsoup4 lxml
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+          npm install puppeteer
 
       - name: Run update script
-        run: python scripts/update.py
+        run: node scripts/update.js
 
-      - name: Commit & push if changed
+      - name: Commit & push
         run: |
           git config user.name "github-actions"
           git config user.email "action@github.com"
           git add -A
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update $(date -u)" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update $(date)" && git push)
