@@ -1,54 +1,35 @@
+/* style.css */
 :root {
-  --bg-color: #f0f2f5;
+  --bg-color: #f4f5f7;
   --card-bg: #ffffff;
-  --primary-color: #ff4757; /* 海角红 */
-  --text-main: #2f3542;
-  --text-sub: #a4b0be;
-  --border-radius: 12px;
-}
-
-/* 暗黑模式适配（可选，根据喜好） */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-color: #1e1e1e;
-    --card-bg: #2d2d2d;
-    --text-main: #dfe4ea;
-    --text-sub: #747d8c;
-  }
+  --primary: #ff4757;
+  --text-main: #333;
+  --text-gray: #888;
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background-color: var(--bg-color);
-  color: var(--text-main);
   margin: 0;
   padding: 0;
-  line-height: 1.6;
+  color: var(--text-main);
+  line-height: 1.5;
 }
 
 /* 顶部栏 */
 header {
-  background: var(--card-bg);
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  background: #fff;
+  padding: 15px 20px;
   text-align: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 99;
 }
+header h1 { margin: 0; font-size: 1.25rem; color: var(--primary); }
+.update-time { font-size: 0.8rem; color: var(--text-gray); }
 
-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  color: var(--primary-color);
-}
-
-.update-time {
-  font-size: 0.85rem;
-  color: var(--text-sub);
-}
-
-/* 主容器 */
+/* 容器 */
 .container {
   max-width: 800px;
   margin: 20px auto;
@@ -58,122 +39,87 @@ header h1 {
 /* 博主卡片 */
 .blogger-card {
   background: var(--card-bg);
-  border-radius: var(--border-radius);
-  margin-bottom: 25px;
+  border-radius: 12px;
+  margin-bottom: 20px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-  transition: transform 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .blogger-header {
-  padding: 15px 20px;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding: 15px;
+  border-bottom: 1px solid #eee;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  background: #fafafa;
 }
 
 .blogger-name {
-  font-size: 1.1rem;
   font-weight: bold;
-  color: var(--text-main);
+  font-size: 1.1rem;
+  color: #333;
   text-decoration: none;
 }
 
 .badge {
-  background: var(--primary-color);
-  color: white;
+  background: var(--primary);
+  color: #fff;
   font-size: 0.75rem;
   padding: 2px 8px;
-  border-radius: 10px;
-  animation: pulse 2s infinite;
+  border-radius: 4px;
 }
 
-/* 帖子列表 */
-.post-list {
-  padding: 0;
-}
-
+/* 帖子项 */
 .post-item {
-  padding: 15px 20px;
-  border-bottom: 1px solid rgba(0,0,0,0.03);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  padding: 15px;
+  border-bottom: 1px solid #f0f0f0;
 }
-
-.post-item:last-child {
-  border-bottom: none;
-}
+.post-item:last-child { border-bottom: none; }
 
 .post-title {
+  display: block;
   font-size: 1rem;
-  color: var(--text-main);
+  color: #333;
   text-decoration: none;
   font-weight: 500;
-  display: block;
   margin-bottom: 6px;
 }
+.post-title:hover { color: var(--primary); }
 
-.post-title:hover {
-  color: var(--primary-color);
-}
-
-.post-meta {
-  font-size: 0.8rem;
-  color: var(--text-sub);
-  display: flex;
-  justify-content: space-between;
-}
-
-.time-today {
-  color: var(--primary-color);
-  font-weight: bold;
-}
+.post-meta { font-size: 0.8rem; color: #999; }
+.time-today { color: var(--primary); font-weight: bold; }
 
 /* 图片画廊 */
 .img-gallery {
   display: flex;
   gap: 8px;
-  margin-top: 5px;
+  margin-top: 10px;
 }
 
 .img-box {
   width: 80px;
   height: 80px;
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
   background: #eee;
-  flex-shrink: 0;
 }
 
 .img-box img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s;
-}
-
-.img-box img:hover {
-  transform: scale(1.1);
 }
 
 .empty-state {
   padding: 20px;
   text-align: center;
-  color: var(--text-sub);
-  font-style: italic;
+  color: #ccc;
+  font-size: 0.9rem;
 }
 
 footer {
   text-align: center;
-  padding: 40px 0;
-  color: var(--text-sub);
+  padding: 30px;
+  color: #bbb;
   font-size: 0.8rem;
-}
-
-@keyframes pulse {
-  0% { opacity: 1; }
-  50% { opacity: 0.6; }
-  100% { opacity: 1; }
 }
