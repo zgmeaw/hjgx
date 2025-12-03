@@ -1,7 +1,10 @@
-// scripts/update.js —— 增强调试版（多重选择器 + 日志，完美抓帖子）
+// scripts/update.js —— 针对海角社区优化版
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
+
+// 辅助函数：延迟
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function getBloggers() {
   const linksPath = path.join(__dirname, '../links.txt');
@@ -10,92 +13,167 @@ async function getBloggers() {
     return [];
   }
 
+  // 读取链接
   const urls = fs.readFileSync(linksPath, 'utf-8')
     .split('\n')
     .map(line => line.trim())
     .filter(line => line && !line.startsWith('#'));
 
-  console.log(`Found ${urls.length} URLs`);
+  console.log(`计划抓取 ${urls.length} 个博主`);
 
   const bloggers = [];
+  
+  // 启动浏览器配置
   const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: '/usr/bin/chromium-browser',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    headless: "new", // 新版 headless 模式
+    args: [
+      '--no-sandbox', 
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--window-size=1920,1080' // 模拟桌面分辨率，防止移动端布局差异
+    ]
   });
 
   for (const url of urls) {
+    console.log(`-------------------------------------------`);
+    console.log(`正在访问: ${url}`);
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    
+    // 设置高级 User-Agent 防止被识别为爬虫
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1920, height: 1080 });
 
-    // 提取昵称（已成功）
-    let nickname = '未知用户';
     try {
-      nickname = await page.evaluate(() => {
-        const text = document.body.innerText;
-        const match = text.match(/(.+?)\s*\(ID:\s*\d+\)/);
-        return match ? match[1].trim() : '未知用户';
-      });
-      console.log(`博主昵称: ${nickname}`);
-    } catch (e) {
-      console.log(`昵称提取失败: ${e.message}`);
-    }
-
-    // 增强帖子提取（多重选择器 fallback + 调试日志）
-    const posts = await page.evaluate(() => {
-      const today = new Date().toISOString().slice(5, 10);  // mm-dd 如 12-03
-      let items = [];
-
-      // fallback 1: .titlerow (你提供的)
-      items = Array.from(document.querySelectorAll('.titlerow'));
-      if (items.length > 0) console.log(`匹配到 ${items.length} 个 .titlerow`);
-
-      // fallback 2: div.item in .list or .post-list
-      if (items.length === 0) {
-        items = Array.from(document.querySelectorAll('div.list div.item, .post-list .item, .threadlist tr'));
-        console.log(`匹配到 ${items.length} 个 item/tr`);
-      }
-
-      // fallback 3: 任何含标题 a 的行
-      if (items.length === 0) {
-        items = Array.from(document.querySelectorAll('tr, div.row, div.post-row')).filter(row => row.querySelector('a'));
-        console.log(`匹配到 ${items.length} 个标题行`);
-      }
-
-      return items.slice(0, 5).map(item => {
-        // 标题：a.subject or a.threadtitle or any a in item
-        let titleEl = item.querySelector('a.subject, a.threadtitle, a');
-        if (!titleEl) return null;
-
-        const title = titleEl.innerText.trim();
-        let link = titleEl.href;
-        if (link.startsWith('/')) link = 'https://www.haijiao.com' + link;
-
-        // 时间：.createTime or .post-time or span with date text
-        let timeEl = item.querySelector('.createTime, .post-time, span.date, span.gray, .time');
-        if (!timeEl) timeEl = document.querySelector('.createTime');  // 页面级 fallback
-        let rawTime = timeEl ? timeEl.innerText.trim() : '';
-        let isToday = rawTime.includes(today);
-        let displayTime = rawTime;
-        if (isToday) {
-          displayTime = rawTime.replace(today, `${new Date().getMonth() + 1}.${new Date().getDate()}`);
+      // 1. 访问页面，增加超时时间
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
+      
+      // 2. 尝试处理未登录弹窗 (海角常见的弹窗关闭按钮)
+      // 等待几秒让弹窗可能弹出来
+      await delay(3000);
+      try {
+        const closeSelectors = [
+          '.ant-modal-close', 
+          '.close-btn', 
+          'button[aria-label="Close"]', 
+          '.van-icon-cross' // 如果是移动端视图
+        ];
+        for (const selector of closeSelectors) {
+          const btn = await page.$(selector);
+          if (btn) {
+            console.log(`检测到弹窗，尝试关闭: ${selector}`);
+            await btn.click();
+            await delay(1000);
+          }
         }
+      } catch (e) {
+        console.log('弹窗处理跳过或无弹窗');
+      }
 
-        // 图片：.attachments img
-        let imgContainer = item.querySelector('.attachments');
-        const images = imgContainer ? Array.from(imgContainer.querySelectorAll('img')).map(img => img.src) : [];
+      // 3. 提取昵称 (保持你原有的逻辑，稍作优化)
+      let nickname = '未知用户';
+      try {
+        await page.waitForSelector('body'); // 确保body加载
+        nickname = await page.evaluate(() => {
+          // 尝试查找特定昵称元素，如果找不到则正则匹配全屏
+          const nameEl = document.querySelector('.nickname, .user-name, h1');
+          if (nameEl) return nameEl.innerText.trim();
+          
+          const text = document.body.innerText;
+          const match = text.match(/(.+?)\s*\(ID:\s*\d+\)/);
+          return match ? match[1].trim() : '未知用户';
+        });
+        console.log(`博主昵称: ${nickname}`);
+      } catch (e) {
+        console.log(`昵称提取失败: ${e.message}`);
+      }
 
-        // 调试：打印第一条标题
-        if (items.indexOf(item) === 0) console.log(`第一条标题: ${title.substring(0, 50)}... | 时间: ${rawTime} | 今天: ${isToday} | 图片数: ${images.length}`);
+      // 4. 核心：等待帖子列表加载
+      // 你提供了 class="titlerow"，这非常关键
+      console.log('正在等待帖子列表 (.titlerow) 加载...');
+      try {
+        // 最多等待 15 秒
+        await page.waitForSelector('.titlerow', { timeout: 15000 });
+      } catch (e) {
+        console.log('⚠️ 超时未找到 .titlerow，尝试截图调试...');
+        // 调试：如果找不到帖子，保存截图和HTML，方便排查
+        await page.screenshot({ path: `debug_error_${Date.now()}.jpg` });
+        const html = await page.content();
+        fs.writeFileSync(`debug_source_${Date.now()}.html`, html);
+        console.log('已保存调试截图和HTML，请检查 artifact。');
+      }
 
-        return { title, link, time: displayTime || '未知', isToday, images };
-      }).filter(p => p && p.title.length > 0);  // 过滤空标题
-    });
+      // 5. 提取帖子数据
+      const posts = await page.evaluate(() => {
+        const todayStr = new Date().toISOString().slice(5, 10); // "12-03"
+        const items = document.querySelectorAll('.titlerow');
+        const results = [];
 
-    bloggers.push({ nickname, posts: posts.slice(0, 3) });
-    await page.close();
-    console.log(`成功: ${nickname} - ${posts.length} 条帖子`);
+        items.forEach(item => {
+          // 限制只取前 5 条，避免处理过多
+          if (results.length >= 5) return;
+
+          // --- 标题 & 链接 ---
+          // 通常 titlerow 里面会有 a 标签或者本身就是链接
+          const linkEl = item.querySelector('a') || item.closest('a');
+          const titleEl = item.querySelector('.subject, h3, .title') || linkEl;
+          
+          if (!titleEl) return;
+
+          const title = titleEl.innerText.trim();
+          let link = linkEl ? linkEl.getAttribute('href') : '';
+          
+          // 补全链接
+          if (link && !link.startsWith('http')) {
+            link = window.location.origin + link;
+          }
+
+          // --- 时间 ---
+          // 使用你提供的 createTime 类
+          let timeEl = item.querySelector('.createTime');
+          let rawTime = timeEl ? timeEl.innerText.trim() : '';
+          
+          // 简单的时间处理
+          let isToday = rawTime.includes(todayStr);
+
+          // --- 图片 ---
+          // 使用你提供的 attachments 类
+          let imgArr = [];
+          const attachEl = item.querySelector('.attachments');
+          if (attachEl) {
+             const imgs = attachEl.querySelectorAll('img');
+             imgs.forEach(img => {
+                 let src = img.getAttribute('src') || img.getAttribute('data-src');
+                 if (src) imgArr.push(src);
+             });
+          }
+
+          if (title) {
+            results.push({
+              title,
+              link,
+              time: rawTime,
+              isToday,
+              images: imgArr
+            });
+          }
+        });
+
+        return results;
+      });
+
+      console.log(`抓取成功: 发现 ${posts.length} 条帖子`);
+      if (posts.length > 0) {
+        console.log(`最新一条: ${posts[0].title} | 时间: ${posts[0].time}`);
+      }
+
+      bloggers.push({ nickname, posts: posts.slice(0, 3) });
+
+    } catch (err) {
+      console.error(`❌ 处理 URL 失败: ${url}`);
+      console.error(err);
+    } finally {
+      await page.close();
+    }
   }
 
   await browser.close();
@@ -104,59 +182,66 @@ async function getBloggers() {
 
 function generateHTML(bloggers) {
   const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+  
+  // 简单的 HTML 模板
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>海角监控站</title>
-<style>
-body{font-family:"Microsoft YaHei",sans-serif;margin:20px auto;max-width:960px;background:#000;color:#eee;line-height:1.8}
-h1{text-align:center;color:#ff79c6;margin:40px 0}
-.b{background:#111;padding:22px;margin:20px 0;border-radius:16px;border:1px solid #333}
-.n{font-size:25px;font-weight:bold;color:#ff79c6;display:flex;align-items:center;gap:12px}
-.dot{font-size:36px;color:#ff5555}
-.p{font-size:17.5px;margin:12px 0;display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center}
-.p a{color:#ff79c6;text-decoration:none;flex:1}
-.p a:hover{text-decoration:underline}
-.t{color:#ff5555;font-weight:bold;min-width:50px;text-align:right}
-.g{color:#888;min-width:50px;text-align:right}
-.img{opacity:0.8;max-width:50px;margin-left:10px;border-radius:4px}
-footer{text-align:center;margin:80px 0;color:#666}
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <h1>海角博主动态监控站</h1>
-<p style="text-align:center;color:#888">最后更新：${now}</p>`;
+<p style="text-align:center;color:#888">最后更新：${now}</p>
+<div class="container">`;
 
   let hasNew = false;
   bloggers.forEach(({ nickname, posts }) => {
     const newCount = posts.filter(p => p.isToday).length;
-    const dot = newCount > 0 ? '<span class="dot">●●● 新帖</span>' : '';
     if (newCount > 0) hasNew = true;
+    
+    // 只有当有帖子时才显示，或者你想显示空博主也可以
+    html += `<div class="card">
+      <div class="card-header">
+        <span class="name">${nickname}</span>
+        ${newCount > 0 ? '<span class="badge">今日更新</span>' : ''}
+      </div>
+      <div class="post-list">`;
 
-    html += `<div class="b"><div class="n">${dot}${nickname}</div>`;
     if (posts.length === 0) {
-      html += '<div style="color:#888;font-style:italic">暂无最新帖子</div>';
+      html += `<div class="empty">暂无获取到数据 (可能需要登录或反爬虫限制)</div>`;
     } else {
       posts.forEach(p => {
-        const tc = p.isToday ? 't' : 'g';
-        let imgHtml = p.images && p.images.length > 0 ? `<img src="${p.images[0]}" class="img" alt="预览" onerror="this.style.display='none'">` : '';
-        html += `<div class="p"><a href="${p.link}" target="_blank">${p.title}</a> <span class="${tc}">${p.time}</span>${imgHtml}</div>`;
+        const timeClass = p.isToday ? 'time new' : 'time';
+        // 显示第一张图作为预览
+        const imgHtml = p.images.length > 0 ? `<div class="thumb"><img src="${p.images[0]}" loading="lazy"></div>` : '';
+        
+        html += `
+        <a href="${p.link}" target="_blank" class="post-item">
+          <div class="post-info">
+            <div class="title">${p.title}</div>
+            <div class="${timeClass}">${p.time}</div>
+          </div>
+          ${imgHtml}
+        </a>`;
       });
     }
-    html += '</div>';
+    html += `</div></div>`;
   });
 
-  html += `<footer>Powered by Puppeteer + GitHub Actions | 今日${hasNew ? '有' : '无'}新帖</footer></body></html>`;
+  html += `</div>
+  <footer>Powered by Puppeteer | <a href="https://github.com/${process.env.GITHUB_REPOSITORY || ''}">Github Repo</a></footer>
+  </body></html>`;
 
   fs.writeFileSync('index.html', html);
+  console.log('HTML 生成完毕');
 }
 
 async function main() {
   const bloggers = await getBloggers();
   generateHTML(bloggers);
-  console.log(`完成！总博主 ${bloggers.length}，总帖子 ${bloggers.reduce((sum, b) => sum + b.posts.length, 0)}`);
 }
 
 main().catch(console.error);
