@@ -74,8 +74,7 @@ def generate_html(new_items):
     <footer>Powered by GitHub Actions + Pages　|　仅供个人使用</footer>
 </body>
 </html>"""
-    os.makedirs("public", exist_ok=True)
-    with open("public/index.html", "w", encoding="utf-8") as f:
+    with open("index.html", "w", encoding="utf-8") as f:
         f.write(html)
 
 def main():
