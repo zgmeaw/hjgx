@@ -1,4 +1,4 @@
-# scripts/update.py —— 最终无敌版：永远显示所有博主，哪怕一条都没抓到也显示名字
+# scripts/update.py —— 2025海角终极稳定版（已修复所有语法错误）
 import requests
 import json
 import os
@@ -32,33 +32,28 @@ def get_blogger_posts(url):
         r.encoding = 'utf-8'
         soup = BeautifulSoup(r.text, 'html.parser')
 
-        # 强制获取昵称（正则 + 标签双保险）
+        # 强制拿到昵称（正则最稳）
         nickname = "未知用户"
-        text = soup.get_text()
-        m = re.search(r'(.+?)\s*\(ID:\s*\d+\)', text)
-        if m:
-            nickname = m.group(1).strip()
-        else:
-            # 备用方案
-            tag = soup.find(['h1', 'h2', 'div'], string=re.compile(r'ID:\s*\d+'))
-            if tag:
-                nickname = tag.get_text().split('ID:')[0].strip()
+        page_text = soup.get_text()
+        match = re.search(r'(.+?)\s*\(ID:\s*\d+\)', page_text)
+        if match:
+            nickname = match.group(1).strip()
 
         posts = []
         today_str = date.today().strftime("%m-%d")
 
-        items = soup.select('div.list div.item')[:15]  # 多抓一点防删帖
+        items = soup.select('div.list div.item')[:15]
         if not items:
-            # 即使没抓到帖子也返回空列表 + 昵称
             return nickname, []
 
         for item in items:
             a = item.select_one('a.subject')
             t = item.select_one('span.date, span.gray, .time, div.info span')
-            if not a: continue
+            if not a:
+                continue
 
             title = a.get_text(strip=True)
-            link = a['href = a.get('href', '')
+            link = a.get('href', '')
             if link.startswith('/'):
                 link = 'https://www.haijiao.com' + link
 
@@ -75,12 +70,11 @@ def get_blogger_posts(url):
                 "is_today": is_today
             })
 
-        return nickname, posts[:3] if posts else []
+        return nickname, posts[:3]
 
     except Exception as e:
-        # 哪怕整个请求都炸了，也要把博主名留下来（用URL里的uid当名字）
         uid = url.split('/')[-1]
-        return f"用户{uid} (抓取异常)", []
+        return f"用户{uid} (异常)", []
 
 def generate_html(bloggers_data):
     now = datetime.now().strftime("%Y年%m月%d日 %H:%M")
@@ -92,17 +86,17 @@ def generate_html(bloggers_data):
 <title>海角博主动态监控站</title>
 <style>
     body{{font-family:"Microsoft YaHei",system-ui,sans-serif;margin:20px auto;max-width:1000px;background:#fafafa;color:#333;line-height:1.7}}
-    h1{{text-align:center;color:#e91e63;margin:30px 0 10px;font-size:28px}}
+    h1{{text-align:center;color:#e91e63;margin:40px 0 10px;font-size:28px}}
     .update{{text-align:center;color:#666;margin-bottom:40px}}
-    .blogger{{background:#fff;padding:22px;margin:20px 0;border-radius:16px;box-shadow:0 6px 16px rgba(0,0,0,0.1);border:1px solid #eee}}
+    .blogger{{background:#fff;padding:22px;margin:20px 0;border-radius:16px;box-shadow:0 6px 16px rgba(0,0,0,0.1)}}
     .name{{font-size:25px;font-weight:bold;color:#222;display:flex;align-items:center;gap:12px;margin-bottom:14px}}
-    .dot{{font-size:34px;color:#ff3b30;p}}
-    .post{{font-size:17.5px;margin:12px 0;display:flex;justify-content:space-between;align-items:center}}
+    .dot{{font-size:34px;color:#ff3b30}}
+    .post{{font-size:17.5px;margin:12px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}}
     .post a{{color:#e91e63;text-decoration:none}}
-    .post a:hover{{color:#e91e63}}
-    .time{{color:#ff3b30;font-weight:bold}}
-    .no-post{{color:#999;font-style:italic}}
+    .post a:hover{{text-decoration:underline}}
+    .time{{color:#ff3b30;font-weight:bold;min-width:70px;text-align:right}}
     .not-today{{color:#888}}
+    .no-post{{color:#999;font-style:italic}}
     footer{{text-align:center;margin:70px 0 30px;color:#aaa}}
 </style>
 </head>
@@ -113,11 +107,10 @@ def generate_html(bloggers_data):
     has_new_today = False
     for nickname, posts in bloggers_data:
         today_count = sum(1 for p in posts if p.get("is_today"))
+        dot = '<span class="dot">●●● 新帖</span>' if today_count > 0 else ''
+
         if today_count > 0:
             has_new_today = True
-            dot = '<span class="dot">●●● 新帖</span>'
-        else:
-            dot = ''
 
         html += f'<div class="blogger"><div class="name">{dot}{nickname}</div>'
 
@@ -126,7 +119,7 @@ def generate_html(bloggers_data):
         else:
             for p in posts:
                 tc = "time" if p["is_today"] else "not-today"
-                html += f'<div class="post"><a href="{p["link"]}" target="_blank">{p["title"]}</a> <span class="{tc}">{p["time"]}</span></div>'
+                html += f'<div class="post"><a href="{p["link"]}" target="_blank">{p["title"]}</a><span class="{tc}">{p["time"]}</span></div>'
         html += '</div>'
 
     html += f'<footer>Powered by GitHub Actions | 今日{"有" if has_new_today else "无"}新帖 | 仅供个人使用</footer></body></html>'
@@ -140,7 +133,8 @@ def main():
     today_new = []
 
     if not os.path.exists("links.txt"):
-        print("links.txt 不存在！")
+        with open("index.html", "w", encoding="utf-8") as f:
+            f.write("<h1>请创建 links.txt 并填入海角最新链接</h1>")
         return
 
     with open("links.txt", encoding="utf-8") as f:
@@ -148,7 +142,7 @@ def main():
 
     for url in urls:
         nick, posts = get_blogger_posts(url)
-        bloggers.append((nick, posts))  # 永远加进来，不跳过
+        bloggers.append((nick, posts))
 
         for p in posts:
             if p.get("is_today"):
@@ -157,7 +151,6 @@ def main():
                     history[key] = {"title": f"【{nick}】{p['title']}", "link": p["link"]}
                     today_new.append(history[key])
 
-    # 邮件部分保持不变
     if today_new:
         today_str = date.today().isoformat()
         daily_file = f"data/daily_{today_str}.json"
@@ -168,7 +161,7 @@ def main():
 
     generate_html(bloggers)
     save_history(history)
-    print(f"生成完成！监控 {len(bloggers)} 位博主，当天新帖 {len(today_new)} 条")
+    print(f"成功！监控 {len(bloggers)} 位博主，当天新帖 {len(today_new)} 条")
 
 if __name__ == "__main__":
     main()
