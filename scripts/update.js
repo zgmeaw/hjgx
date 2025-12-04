@@ -577,4 +577,10 @@ async function main() {
   saveDailyUpdates(bloggers);
 }
 
-main().catch(console.error);
+// 如果直接运行此文件，执行主函数
+if (require.main === module) {
+  main().catch(console.error);
+}
+
+// 导出函数供其他脚本使用
+module.exports = { getBloggers, generateHTML, saveDailyUpdates };

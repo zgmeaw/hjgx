@@ -1,0 +1,31 @@
+name: Manual Email (All Bloggers)
+on:
+  workflow_dispatch:  # 仅手动触发
+
+permissions:
+  contents: read
+
+jobs:
+  email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: |
+          npm install
+          npx puppeteer browsers install chrome
+
+      - name: Send email (all bloggers)
+        env:
+          QQ_MAIL: ${{ secrets.QQ_MAIL }}
+          QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
+          PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
+        run: node scripts/send_email_manual.js
+
