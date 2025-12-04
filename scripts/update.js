@@ -207,50 +207,6 @@ async function getBloggers() {
             }
             if (!container) container = item.parentElement;
 
-            // --- 链接：快速查找pid（只检查最可能的位置）---
-            let link = '';
-            let pid = null;
-            
-            // 快速方法：只检查元素本身和直接父元素的常见属性
-            try {
-              const checkAttrs = (el) => {
-                if (!el) return null;
-                // 检查更多可能的属性
-                const attrs = ['data-pid', 'data-id', 'data-post-id', 'id', 'data-href', 'data-url', 'data-link'];
-                for (const attrName of attrs) {
-                  const value = el.getAttribute(attrName);
-                  if (value) {
-                    // 先尝试直接匹配pid
-                    const pidMatch = value.match(/pid[=:](\d+)/i) || value.match(/[?&]pid=(\d+)/i);
-                    if (pidMatch) return pidMatch[1];
-                    // 再尝试匹配6位以上数字
-                    const numMatch = value.match(/(\d{6,})/);
-                    if (numMatch) return numMatch[1];
-                  }
-                }
-                return null;
-              };
-              
-              // 检查元素本身、容器、父元素
-              pid = checkAttrs(item) || checkAttrs(container) || checkAttrs(item.parentElement);
-              
-              // 如果还没找到，尝试从元素的文本内容或附近元素中查找
-              if (!pid) {
-                // 查找包含数字的兄弟元素
-                let sibling = item.nextElementSibling;
-                for (let c = 0; c < 3 && sibling; c++) {
-                  pid = checkAttrs(sibling);
-                  if (pid) break;
-                  sibling = sibling.nextElementSibling;
-                }
-              }
-            } catch (e) {}
-            
-            // 构建链接
-            if (pid) {
-              link = `https://www.haijiao.com/post/details?pid=${pid}`;
-            }
-
             // --- 时间 ---
             let rawTime = '';
             if (container) {
@@ -356,7 +312,6 @@ async function getBloggers() {
 
             results.push({
               title,
-              link: link || '#',
               time: rawTime || '未知时间',
               isToday: rawTime.includes(todayStr),
               images: imgSrc ? [imgSrc] : []
