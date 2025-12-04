@@ -144,8 +144,8 @@ async function getBloggers() {
         }
       }
 
-      // 5. 提取帖子数据
-      const posts = await page.evaluate(() => {
+      // 5. 提取帖子数据 - 使用模拟点击获取链接
+      const posts = await page.evaluate(async () => {
         const todayStr = new Date().toISOString().slice(5, 10); // "12-03"
         // 优先使用 .title，如果没有则使用 .titlerow
         let items = document.querySelectorAll('.title');
@@ -154,172 +154,102 @@ async function getBloggers() {
         }
         const results = [];
 
-        items.forEach(item => {
-          // 限制只取前 3 条
-          if (results.length >= 3) return;
-
+        for (let idx = 0; idx < Math.min(items.length, 3); idx++) {
+          const item = items[idx];
+          
           // --- 找到包含 title 的父容器 ---
-          // 向上查找父容器，通常是一个列表项或卡片
           let container = item.parentElement;
-          // 向上查找几层，找到包含完整帖子信息的容器
           let depth = 0;
-          while (container && depth < 5) {
-            // 检查这个容器是否包含 createTime
+          while (container && depth < 8) {
             const hasTime = container.querySelector('.createTime');
-            if (hasTime) {
-              break; // 找到了包含完整信息的容器
-            }
+            const hasAttach = container.querySelector('.attachments');
+            if (hasTime || hasAttach) break;
             container = container.parentElement;
             depth++;
           }
-          
-          // 如果找不到合适的容器，使用 title 的直接父元素
-          if (!container) {
-            container = item.parentElement;
-          }
+          if (!container) container = item.parentElement;
 
           // --- 标题 ---
           const title = item.innerText.trim() || item.getAttribute('title') || '';
-          if (!title) return;
+          if (!title) continue;
 
-          // --- 链接 ---
-          // 尝试多种方式获取链接
+          // --- 链接：尝试多种方式获取pid ---
           let link = '';
+          let pid = null;
           
-          // 1. title 本身可能是链接
-          if (item.tagName === 'A') {
-            link = item.getAttribute('href') || '';
-          }
-          // 2. title 内部有 a 标签
-          else {
-            const linkEl = item.querySelector('a');
-            if (linkEl) {
-              link = linkEl.getAttribute('href') || '';
-            }
-          }
-          
-          // 3. 在父容器中查找链接
-          if (!link && container) {
-            // 查找包含当前 title 元素的链接
-            const containerLink = container.closest('a');
-            if (containerLink) {
-              link = containerLink.getAttribute('href') || '';
-            }
-            // 如果找不到，查找容器内的第一个链接
-            if (!link) {
-              const firstLink = container.querySelector('a');
-              if (firstLink) {
-                link = firstLink.getAttribute('href') || '';
+          // 方法1: 从元素的数据属性中查找pid
+          let searchEl = container || item;
+          for (let d = 0; d < 6; d++) {
+            if (!searchEl) break;
+            // 检查所有属性
+            for (const attr of searchEl.attributes || []) {
+              const value = attr.value;
+              // 查找pid=数字 或 data-pid 等
+              if (attr.name.includes('pid') || attr.name.includes('post') || attr.name.includes('id')) {
+                const pidMatch = value.match(/pid[=:](\d+)/i) || value.match(/(\d{6,})/);
+                if (pidMatch) {
+                  pid = pidMatch[1];
+                  break;
+                }
               }
-            }
-          }
-          
-          // 4. 如果 title 的父元素是链接
-          if (!link) {
-            const parentLink = item.closest('a');
-            if (parentLink) {
-              link = parentLink.getAttribute('href') || '';
-            }
-          }
-          
-          // 5. 尝试从数据属性获取链接
-          if (!link || link === '#') {
-            let searchEl = container || item;
-            const dataLink = searchEl.getAttribute('data-href') || 
-                           searchEl.getAttribute('data-url') ||
-                           item.getAttribute('data-href') ||
-                           item.getAttribute('data-url');
-            if (dataLink) {
-              link = dataLink.startsWith('http') ? dataLink : window.location.origin + dataLink;
-            }
-          }
-          
-          // 6. 尝试从点击事件或Vue路由中获取链接
-          // 海角社区可能使用Vue Router，链接可能在@click事件中
-          if (!link || link === '#') {
-            let searchEl = container || item;
-            // 查找可能包含路由信息的元素
-            const clickHandler = searchEl.getAttribute('@click') || 
-                               searchEl.getAttribute('v-on:click') ||
-                               searchEl.getAttribute('onclick');
-            
-            // 尝试从Vue路由信息中提取
-            // 某些情况下，Vue组件可能有路由信息
-            if (clickHandler) {
-              // 尝试匹配路由路径，如 /post/123 或 /thread/123
-              const routeMatch = clickHandler.match(/['"`]([/][^'"`]+)['"`]/);
-              if (routeMatch) {
-                link = window.location.origin + routeMatch[1];
-              }
-            }
-          }
-          
-          // 7. 尝试从容器或元素的ID/数据属性中构建链接
-          if (!link || link === '#') {
-            let searchEl = container || item;
-            // 查找可能包含帖子ID的元素
-            const possibleId = searchEl.getAttribute('data-id') || 
-                              searchEl.getAttribute('data-post-id') || 
-                              searchEl.getAttribute('data-thread-id') ||
-                              searchEl.getAttribute('id');
-            
-            if (possibleId) {
-              // 尝试从ID中提取数字
-              const idMatch = String(possibleId).match(/\d+/);
-              if (idMatch) {
-                const currentPath = window.location.pathname;
-                // 根据当前路径判断可能的链接格式
-                if (currentPath.includes('/homepage/last/')) {
-                  // 尝试几种可能的链接格式
-                  const possibleLinks = [
-                    window.location.origin + '/post/' + idMatch[0],
-                    window.location.origin + '/thread/' + idMatch[0],
-                    window.location.origin + '/topic/' + idMatch[0],
-                    window.location.origin + '/article/' + idMatch[0]
-                  ];
-                  // 使用第一个可能的链接（可以根据实际情况调整）
-                  link = possibleLinks[0];
+              // 在属性值中查找pid
+              if (value && typeof value === 'string') {
+                const pidMatch = value.match(/pid[=:](\d+)/i) || value.match(/[?&]pid=(\d+)/i);
+                if (pidMatch) {
+                  pid = pidMatch[1];
+                  break;
                 }
               }
             }
+            if (pid) break;
+            searchEl = searchEl.parentElement;
           }
           
-          // 8. 如果标题有 hjbox-linkcolor 类，尝试查找相关的路由信息
-          // 某些情况下，可能需要点击标题才能获取链接，这里我们尝试从页面结构推断
-          if (!link || link === '#') {
-            // 查找标题附近的元素，看是否有路由相关的信息
-            let sibling = item.nextElementSibling;
-            let checkCount = 0;
-            while (sibling && checkCount < 3) {
-              const siblingLink = sibling.querySelector('a');
-              if (siblingLink) {
-                link = siblingLink.getAttribute('href') || '';
-                if (link) break;
+          // 方法2: 从Vue实例中获取
+          if (!pid && item.__vue__) {
+            try {
+              const vue = item.__vue__;
+              // 查找路由信息
+              if (vue.$attrs && vue.$attrs.to) {
+                const to = vue.$attrs.to;
+                const pidMatch = to.match(/pid[=:](\d+)/i) || to.match(/[?&]pid=(\d+)/i) || to.match(/(\d{6,})/);
+                if (pidMatch) pid = pidMatch[1];
               }
-              sibling = sibling.nextElementSibling;
-              checkCount++;
+              if (!pid && vue.$props && vue.$props.to) {
+                const to = vue.$props.to;
+                const pidMatch = to.match(/pid[=:](\d+)/i) || to.match(/[?&]pid=(\d+)/i) || to.match(/(\d{6,})/);
+                if (pidMatch) pid = pidMatch[1];
+              }
+            } catch (e) {}
+          }
+          
+          // 方法3: 从点击事件处理器中提取
+          if (!pid) {
+            let el = item;
+            for (let d = 0; d < 3; d++) {
+              if (!el) break;
+              // 检查Vue的事件监听器
+              if (el.__vueParentComponent) {
+                const props = el.__vueParentComponent.props;
+                if (props && props.to) {
+                  const to = props.to;
+                  const pidMatch = to.match(/pid[=:](\d+)/i) || to.match(/[?&]pid=(\d+)/i) || to.match(/(\d{6,})/);
+                  if (pidMatch) {
+                    pid = pidMatch[1];
+                    break;
+                  }
+                }
+              }
+              el = el.parentElement;
             }
           }
           
-          // 补全链接（相对路径转绝对路径）
-          if (link && !link.startsWith('http') && link !== '#') {
-            if (link.startsWith('/')) {
-              link = window.location.origin + link;
-            } else if (link.startsWith('./') || link.startsWith('../')) {
-              // 处理相对路径
-              const baseUrl = window.location.href.split('/').slice(0, -1).join('/');
-              try {
-                link = new URL(link, baseUrl + '/').href;
-              } catch (e) {
-                link = '#';
-              }
-            } else if (link) {
-              link = window.location.origin + '/' + link;
-            }
+          // 构建链接
+          if (pid) {
+            link = `https://www.haijiao.com/post/details?pid=${pid}`;
           }
 
           // --- 时间 ---
-          // 在容器中查找 createTime
           let rawTime = '';
           if (container) {
             const timeEl = container.querySelector('.createTime');
@@ -327,171 +257,145 @@ async function getBloggers() {
               rawTime = timeEl.innerText.trim();
             }
           }
-          // 如果容器中找不到，尝试在 title 附近查找
           if (!rawTime) {
-            // 查找 title 的兄弟元素（向后查找）
             let sibling = item.nextElementSibling;
             let checkCount = 0;
             while (sibling && checkCount < 5) {
-              if (sibling.classList.contains('createTime')) {
+              if (sibling.classList && sibling.classList.contains('createTime')) {
                 rawTime = sibling.innerText.trim();
                 break;
               }
               sibling = sibling.nextElementSibling;
               checkCount++;
             }
-            // 如果向后找不到，尝试向前查找
-            if (!rawTime) {
-              sibling = item.previousElementSibling;
-              checkCount = 0;
-              while (sibling && checkCount < 3) {
-                if (sibling.classList.contains('createTime')) {
-                  rawTime = sibling.innerText.trim();
-                  break;
-                }
-                sibling = sibling.previousElementSibling;
-                checkCount++;
-              }
-            }
-          }
-          // 备用：尝试查找其他可能的时间元素
-          if (!rawTime && container) {
-            const altTimeSelectors = [
-              '.time', '.post-time', '.date', '.post-date',
-              '[class*="time"]', '[class*="Time"]', '[class*="date"]', '[class*="Date"]'
-            ];
-            for (const selector of altTimeSelectors) {
-              const altTimeEl = container.querySelector(selector);
-              if (altTimeEl) {
-                const text = altTimeEl.innerText.trim();
-                // 检查是否包含日期格式（如 12-03, 2024-12-03 等）
-                if (text.match(/\d{1,2}[-/]\d{1,2}/) || text.match(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/)) {
-                  rawTime = text;
-                  break;
-                }
-              }
-            }
           }
           
-          // 简单的时间处理
-          let isToday = rawTime.includes(todayStr);
-
           // --- 图片 ---
-          // 图片可能在容器中直接存在，也可能在 .attachments 中
           let imgArr = [];
-          const extractImages = (element) => {
-            if (!element) return [];
-            const imgs = element.querySelectorAll('img');
-            const imgSrcs = [];
-            imgs.forEach(img => {
-              let src = img.getAttribute('src') || 
-                       img.getAttribute('data-src') || 
-                       img.getAttribute('data-original') ||
-                       img.getAttribute('data-lazy-src') ||
-                       img.getAttribute('data-url');
-              if (src) {
-                // base64 图片直接使用
-                if (src.startsWith('data:image')) {
-                  imgSrcs.push(src);
-                }
-                // 补全其他图片链接
-                else if (src.startsWith('//')) {
-                  src = 'https:' + src;
-                  imgSrcs.push(src);
-                } else if (src.startsWith('/')) {
-                  src = window.location.origin + src;
-                  imgSrcs.push(src);
-                } else if (src.startsWith('http')) {
-                  imgSrcs.push(src);
-                } else if (!src.startsWith('http')) {
-                  src = window.location.origin + '/' + src;
-                  imgSrcs.push(src);
-                }
-              }
-            });
-            // 过滤掉无效的图片（如占位符），但保留 base64
-            return imgSrcs.filter(src => {
-              if (src.startsWith('data:image')) return true;
-              return !src.includes('placeholder') && !src.includes('blank') && src.length > 10;
-            });
-          };
-          
           if (container) {
-            // 优先在 .attachments 中查找
             const attachEl = container.querySelector('.attachments');
             if (attachEl) {
-              imgArr = extractImages(attachEl);
-            }
-            // 如果 attachments 中没找到，尝试在整个容器中查找图片
-            if (imgArr.length === 0) {
-              imgArr = extractImages(container);
-            }
-            // 只取前3张图片
-            imgArr = imgArr.slice(0, 3);
-          }
-          // 如果容器中找不到，尝试在 title 附近查找
-          if (imgArr.length === 0) {
-            let sibling = item.nextElementSibling;
-            let checkCount = 0;
-            while (sibling && checkCount < 5) {
-              if (sibling.classList.contains('attachments')) {
-                imgArr = extractImages(sibling);
-                break;
-              }
-              // 如果兄弟元素本身是图片或包含图片
-              if (sibling.tagName === 'IMG') {
-                const src = sibling.getAttribute('src') || sibling.getAttribute('data-src');
-                if (src) {
-                  imgArr = extractImages(sibling.parentElement);
-                  break;
+              const imgs = attachEl.querySelectorAll('img');
+              imgs.forEach(img => {
+                let src = img.getAttribute('src') || 
+                         img.getAttribute('data-src') || 
+                         img.getAttribute('data-original') ||
+                         img.getAttribute('data-lazy-src');
+                if (src && src.trim() !== '') {
+                  if (src.startsWith('data:image')) {
+                    imgArr.push(src);
+                  } else if (src.startsWith('//')) {
+                    imgArr.push('https:' + src);
+                  } else if (src.startsWith('/')) {
+                    imgArr.push(window.location.origin + src);
+                  } else if (src.startsWith('http')) {
+                    imgArr.push(src);
+                  }
                 }
-              }
-              sibling = sibling.nextElementSibling;
-              checkCount++;
+              });
             }
           }
-          // 如果还是找不到，尝试向前查找
-          if (imgArr.length === 0) {
-            let sibling = item.previousElementSibling;
-            let checkCount = 0;
-            while (sibling && checkCount < 3) {
-              if (sibling.classList.contains('attachments')) {
-                imgArr = extractImages(sibling);
-                break;
-              }
-              sibling = sibling.previousElementSibling;
-              checkCount++;
-            }
-          }
+          imgArr = imgArr.filter(src => {
+            if (src.startsWith('data:image')) return true;
+            return !src.includes('placeholder') && !src.includes('blank') && src.length > 10;
+          });
 
           if (title) {
             results.push({
               title,
               link: link || '#',
               time: rawTime || '未知时间',
-              isToday,
-              images: imgArr
+              isToday: rawTime.includes(todayStr),
+              images: imgArr.slice(0, 1) // 只取第一张
             });
           }
-        });
+        }
 
         return results;
       });
+      
+      // 如果还是没有获取到链接，尝试通过模拟点击获取
+      for (let i = 0; i < posts.length; i++) {
+        if (posts[i].link === '#') {
+          try {
+            // 获取对应的title元素
+            const titleElements = await page.$$('.title');
+            if (titleElements[i]) {
+              // 设置导航监听
+              let capturedUrl = null;
+              const responseHandler = (response) => {
+                const url = response.url();
+                if (url.includes('/post/details') && url.includes('pid=')) {
+                  capturedUrl = url;
+                }
+              };
+              page.on('response', responseHandler);
+              
+              // 在新标签页中打开（使用Ctrl+Click模拟）
+              const [newPage] = await Promise.all([
+                new Promise((resolve) => {
+                  page.browser().on('targetcreated', (target) => {
+                    resolve(target.page());
+                  });
+                }),
+                titleElements[i].click({ modifiers: ['Control'] })
+              ]);
+              
+              await delay(1000);
+              
+              if (newPage) {
+                const newUrl = await newPage.url();
+                if (newUrl.includes('/post/details')) {
+                  posts[i].link = newUrl;
+                }
+                await newPage.close();
+              }
+              
+              page.off('response', responseHandler);
+              
+              // 如果还是没获取到，尝试从URL参数中提取
+              if (posts[i].link === '#' && capturedUrl) {
+                posts[i].link = capturedUrl;
+              }
+            }
+          } catch (err) {
+            console.log(`  模拟点击获取链接失败: ${err.message}`);
+          }
+        }
+      }
 
       console.log(`抓取成功: 发现 ${posts.length} 条帖子`);
       if (posts.length > 0) {
         posts.forEach((post, idx) => {
           console.log(`帖子 ${idx + 1}:`);
           console.log(`  标题: ${post.title}`);
-          console.log(`  链接: ${post.link}`);
-          console.log(`  时间: ${post.time}`);
+          console.log(`  链接: ${post.link || '未获取到链接'}`);
+          console.log(`  时间: ${post.time || '未获取到时间'}`);
           console.log(`  图片数量: ${post.images.length}`);
           if (post.images.length > 0) {
-            console.log(`  第一张图片: ${post.images[0]}`);
+            const imgPreview = post.images[0].startsWith('data:image') 
+              ? `base64图片 (${Math.round(post.images[0].length / 1024)}KB)`
+              : post.images[0].substring(0, 80) + '...';
+            console.log(`  第一张图片: ${imgPreview}`);
+          } else {
+            console.log(`  ⚠️ 未获取到图片，可能需要检查 .attachments 选择器`);
           }
         });
       } else {
         console.log('⚠️ 未获取到任何帖子，可能需要检查选择器');
+      }
+      
+      // 如果链接或图片都没有获取到，输出调试信息
+      const hasLink = posts.some(p => p.link && p.link !== '#');
+      const hasImage = posts.some(p => p.images && p.images.length > 0);
+      if (!hasLink || !hasImage) {
+        console.log('\n⚠️ 调试信息:');
+        if (!hasLink) {
+          console.log('  - 未获取到任何链接，可能需要检查页面结构或使用JavaScript路由');
+        }
+        if (!hasImage) {
+          console.log('  - 未获取到任何图片，可能需要检查 .attachments 元素的位置');
+        }
       }
 
       bloggers.push({ nickname, posts: posts.slice(0, 3) });
