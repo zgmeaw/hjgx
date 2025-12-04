@@ -215,18 +215,35 @@ async function getBloggers() {
             try {
               const checkAttrs = (el) => {
                 if (!el) return null;
-                const attrs = ['data-pid', 'data-id', 'id'];
+                // 检查更多可能的属性
+                const attrs = ['data-pid', 'data-id', 'data-post-id', 'id', 'data-href', 'data-url', 'data-link'];
                 for (const attrName of attrs) {
                   const value = el.getAttribute(attrName);
                   if (value) {
-                    const match = value.match(/(\d{6,})/);
-                    if (match) return match[1];
+                    // 先尝试直接匹配pid
+                    const pidMatch = value.match(/pid[=:](\d+)/i) || value.match(/[?&]pid=(\d+)/i);
+                    if (pidMatch) return pidMatch[1];
+                    // 再尝试匹配6位以上数字
+                    const numMatch = value.match(/(\d{6,})/);
+                    if (numMatch) return numMatch[1];
                   }
                 }
                 return null;
               };
               
+              // 检查元素本身、容器、父元素
               pid = checkAttrs(item) || checkAttrs(container) || checkAttrs(item.parentElement);
+              
+              // 如果还没找到，尝试从元素的文本内容或附近元素中查找
+              if (!pid) {
+                // 查找包含数字的兄弟元素
+                let sibling = item.nextElementSibling;
+                for (let c = 0; c < 3 && sibling; c++) {
+                  pid = checkAttrs(sibling);
+                  if (pid) break;
+                  sibling = sibling.nextElementSibling;
+                }
+              }
             } catch (e) {}
             
             // 构建链接
@@ -354,7 +371,7 @@ async function getBloggers() {
       
       console.log(`✓ 数据提取完成，获取到 ${posts.length} 条帖子`);
       
-      // 通过模拟点击获取链接
+      // 通过模拟点击获取链接 - 监听网络请求
       console.log('开始通过点击获取帖子链接...');
       const titleElements = await page.$$('.title');
       const originalUrl = page.url();
@@ -365,127 +382,206 @@ async function getBloggers() {
             console.log(`  正在为第 ${i + 1} 条帖子获取链接...`);
             const titleEl = titleElements[i];
             let gotLink = false;
+            let capturedUrl = null;
             
-            // 方法1: 直接点击，等待页面导航
-            const urlBefore = page.url();
-            console.log(`    当前URL: ${urlBefore}`);
-            
-            // 先设置导航监听，再点击
-            const navigationPromise = page.waitForNavigation({ 
-              waitUntil: 'networkidle2', 
-              timeout: 15000 
-            }).catch(() => {
-              console.log(`    导航监听超时`);
-              return null;
-            });
-            
-            // 点击标题
-            await titleEl.click();
-            console.log(`    已点击标题，等待导航...`);
-            
-            // 等待导航完成
+            // 方法1: 先尝试从元素中执行JavaScript获取路由信息
+            console.log(`    尝试从元素中提取路由信息...`);
             try {
-              await navigationPromise;
-            } catch (e) {
-              console.log(`    导航等待出错: ${e.message}`);
-            }
-            
-            // 额外等待确保URL更新（JavaScript路由可能需要时间）
-            await delay(4000);
-            
-            const urlAfter = page.url();
-            console.log(`    点击后URL: ${urlAfter}`);
-            
-            if (urlAfter.includes('/post/details') && urlAfter !== urlBefore) {
-              posts[i].link = urlAfter;
-              console.log(`  ✓ 通过页面导航获取到链接: ${urlAfter}`);
-              gotLink = true;
-              // 返回上一页
-              await page.goBack({ waitUntil: 'networkidle2' });
-              await delay(3000);
-            } else {
-              console.log(`    页面未导航或URL未变化`);
-            }
-            
-            // 方法2: 如果当前页面点击没成功，尝试Ctrl+点击在新标签页打开
-            if (!gotLink) {
-              console.log(`  尝试在新标签页打开...`);
-              
-              // 记录当前所有标签页的URL
-              const currentTargets = new Set();
-              const currentPages = [];
-              for (const target of page.browser().targets()) {
-                if (target.type() === 'page') {
-                  try {
-                    const p = await target.page();
-                    const url = p.url();
-                    currentTargets.add(url);
-                    currentPages.push(p);
-                  } catch (e) {}
-                }
-              }
-              
-              // Ctrl+点击
-              await titleEl.click({ modifiers: ['Control'] });
-              await delay(5000); // 等待新标签页加载
-              
-              // 检查所有标签页，找到新的
-              for (const target of page.browser().targets()) {
-                if (target.type() === 'page') {
-                  try {
-                    const newPage = await target.page();
-                    const url = newPage.url();
-                    console.log(`    检查标签页URL: ${url}`);
-                    if (url.includes('/post/details') && !currentTargets.has(url)) {
-                      posts[i].link = url;
-                      console.log(`  ✓ 从新标签页获取到链接: ${url}`);
-                      gotLink = true;
-                      if (newPage !== page) {
-                        await newPage.close();
-                      }
-                      break;
+              const routeInfo = await page.evaluate((el) => {
+                // 尝试获取Vue实例
+                if (el.__vue__) {
+                  const vue = el.__vue__;
+                  // 检查$attrs
+                  if (vue.$attrs && vue.$attrs.to) {
+                    const to = vue.$attrs.to;
+                    if (typeof to === 'string' && to.includes('pid=')) {
+                      const pidMatch = to.match(/pid=(\d+)/);
+                      if (pidMatch) return pidMatch[1];
                     }
-                  } catch (e) {
-                    console.log(`    检查标签页时出错: ${e.message}`);
+                    if (typeof to === 'object' && to.path) {
+                      const pidMatch = to.path.match(/pid=(\d+)/) || (to.query && to.query.pid);
+                      if (pidMatch) return String(pidMatch[1] || pidMatch);
+                    }
+                  }
+                  // 检查$props
+                  if (vue.$props && vue.$props.to) {
+                    const to = vue.$props.to;
+                    if (typeof to === 'string' && to.includes('pid=')) {
+                      const pidMatch = to.match(/pid=(\d+)/);
+                      if (pidMatch) return pidMatch[1];
+                    }
                   }
                 }
+                
+                // 尝试从点击事件中获取
+                const onclick = el.getAttribute('onclick') || el.getAttribute('@click');
+                if (onclick) {
+                  const pidMatch = onclick.match(/pid[=:](\d+)/i) || onclick.match(/(\d{6,})/);
+                  if (pidMatch) return pidMatch[1];
+                }
+                
+                // 尝试查找父元素中的路由信息
+                let parent = el.parentElement;
+                for (let d = 0; d < 3 && parent; d++) {
+                  if (parent.__vue__) {
+                    const vue = parent.__vue__;
+                    if (vue.$attrs && vue.$attrs.to) {
+                      const to = vue.$attrs.to;
+                      if (typeof to === 'string' && to.includes('pid=')) {
+                        const pidMatch = to.match(/pid=(\d+)/);
+                        if (pidMatch) return pidMatch[1];
+                      }
+                    }
+                  }
+                  parent = parent.parentElement;
+                }
+                
+                return null;
+              }, titleEl);
+              
+              if (routeInfo) {
+                posts[i].link = `https://www.haijiao.com/post/details?pid=${routeInfo}`;
+                console.log(`  ✓ 从Vue实例提取到链接: ${posts[i].link}`);
+                gotLink = true;
+              }
+            } catch (e) {
+              console.log(`    从Vue实例提取失败: ${e.message}`);
+            }
+            
+            // 方法2: 监听网络请求，从响应URL中提取链接
+            if (!gotLink) {
+              console.log(`    监听网络请求...`);
+              const responseHandler = (response) => {
+                const url = response.url();
+                if (url.includes('/post/details') && url.includes('pid=')) {
+                  capturedUrl = url;
+                  console.log(`    捕获到响应URL: ${url}`);
+                }
+                // 也检查请求URL
+                if (url.includes('pid=')) {
+                  const pidMatch = url.match(/pid=(\d+)/);
+                  if (pidMatch) {
+                    capturedUrl = `https://www.haijiao.com/post/details?pid=${pidMatch[1]}`;
+                    console.log(`    从请求URL提取到链接: ${capturedUrl}`);
+                  }
+                }
+              };
+              
+              page.on('response', responseHandler);
+              
+              try {
+                // 点击标题
+                await titleEl.click();
+                console.log(`    已点击标题，等待网络请求...`);
+                
+                // 等待网络请求
+                await delay(5000);
+                
+                if (capturedUrl) {
+                  posts[i].link = capturedUrl;
+                  console.log(`  ✓ 通过网络请求获取到链接: ${capturedUrl}`);
+                  gotLink = true;
+                }
+              } finally {
+                page.off('response', responseHandler);
               }
             }
             
-            // 方法3: 如果还是没获取到，尝试从页面hash或location中获取
+            // 方法2: 如果网络请求没捕获到，尝试从点击后的页面内容中提取pid
             if (!gotLink) {
-              console.log(`  尝试从页面信息中提取链接...`);
+              console.log(`  尝试从页面内容中提取pid...`);
               try {
-                const pageInfo = await page.evaluate(() => {
-                  return {
-                    href: window.location.href,
-                    hash: window.location.hash,
-                    pathname: window.location.pathname,
-                    search: window.location.search
-                  };
-                });
-                console.log(`    页面信息:`, pageInfo);
+                // 点击后等待页面内容加载
+                await titleEl.click();
+                await delay(3000);
                 
-                // 检查是否有pid参数
-                if (pageInfo.search.includes('pid=')) {
-                  const pidMatch = pageInfo.search.match(/pid=(\d+)/);
-                  if (pidMatch) {
-                    posts[i].link = `https://www.haijiao.com/post/details?pid=${pidMatch[1]}`;
-                    console.log(`  ✓ 从URL参数提取到链接: ${posts[i].link}`);
-                    gotLink = true;
+                // 从页面中查找pid
+                const pidInfo = await page.evaluate(() => {
+                  // 查找所有可能包含pid的元素
+                  const possibleSelectors = [
+                    '[data-pid]',
+                    '[data-id]',
+                    '[data-post-id]',
+                    '.post-id',
+                    '#postId'
+                  ];
+                  
+                  for (const selector of possibleSelectors) {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                      const pid = el.getAttribute('data-pid') || 
+                                 el.getAttribute('data-id') || 
+                                 el.getAttribute('data-post-id') ||
+                                 el.getAttribute('id') ||
+                                 el.innerText;
+                      if (pid && /^\d{6,}$/.test(String(pid).trim())) {
+                        return String(pid).trim();
+                      }
+                    }
                   }
+                  
+                  // 从URL中查找
+                  const urlMatch = window.location.href.match(/pid=(\d+)/);
+                  if (urlMatch) return urlMatch[1];
+                  
+                  // 从页面文本中查找（查找6位以上的数字，可能是pid）
+                  const bodyText = document.body.innerText;
+                  const pidMatch = bodyText.match(/pid[=:](\d{6,})/i);
+                  if (pidMatch) return pidMatch[1];
+                  
+                  return null;
+                });
+                
+                if (pidInfo) {
+                  posts[i].link = `https://www.haijiao.com/post/details?pid=${pidInfo}`;
+                  console.log(`  ✓ 从页面内容提取到链接: ${posts[i].link}`);
+                  gotLink = true;
+                }
+                
+                // 返回上一页（如果导航了）
+                const currentUrl = page.url();
+                if (currentUrl !== originalUrl) {
+                  await page.goBack({ waitUntil: 'networkidle2' });
+                  await delay(2000);
                 }
               } catch (e) {
-                console.log(`    提取页面信息失败: ${e.message}`);
+                console.log(`    从页面内容提取失败: ${e.message}`);
+              }
+            }
+            
+            // 方法3: 尝试从Vue Router中获取
+            if (!gotLink) {
+              console.log(`  尝试从Vue Router中获取...`);
+              try {
+                const routeInfo = await page.evaluate(() => {
+                  // 检查是否有Vue Router
+                  if (window.$router || window.__VUE_ROUTER__) {
+                    const router = window.$router || window.__VUE_ROUTER__;
+                    if (router && router.currentRoute) {
+                      const route = router.currentRoute.value || router.currentRoute;
+                      if (route && route.path) {
+                        return route.path + (route.query ? '?' + new URLSearchParams(route.query).toString() : '');
+                      }
+                    }
+                  }
+                  return null;
+                });
+                
+                if (routeInfo && routeInfo.includes('/post/details')) {
+                  posts[i].link = routeInfo.startsWith('http') ? routeInfo : `https://www.haijiao.com${routeInfo}`;
+                  console.log(`  ✓ 从Vue Router获取到链接: ${posts[i].link}`);
+                  gotLink = true;
+                }
+              } catch (e) {
+                console.log(`    从Vue Router获取失败: ${e.message}`);
               }
             }
             
             if (!gotLink) {
-              console.log(`  ⚠️ 未能获取到链接，可能需要手动检查`);
+              console.log(`  ⚠️ 未能获取到链接`);
             }
           } catch (err) {
             console.log(`  获取链接失败: ${err.message}`);
-            console.log(`  错误堆栈: ${err.stack}`);
           }
         } else {
           console.log(`  第 ${i + 1} 条帖子已有链接: ${posts[i].link}`);
