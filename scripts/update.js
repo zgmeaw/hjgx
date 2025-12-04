@@ -234,7 +234,20 @@ async function getBloggers() {
               const imgs = container.querySelectorAll('img');
               // 先找base64图片
               for (const img of imgs) {
-                const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '';
+                // 使用 outerHTML 或直接读取属性，确保获取完整的 base64 字符串
+                let src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '';
+                // 如果属性值看起来被截断，尝试从 outerHTML 中提取
+                if (src && src.startsWith('data:image') && !src.endsWith('=') && !src.endsWith('==') && !src.endsWith('===')) {
+                  // base64 应该以 =、== 或 === 结尾，如果没有，可能被截断了
+                  // 尝试从 outerHTML 中提取完整的 base64
+                  try {
+                    const outerHTML = img.outerHTML;
+                    const base64Match = outerHTML.match(/src=["'](data:image\/[^;]+;base64,[^"']+)["']/);
+                    if (base64Match && base64Match[1]) {
+                      src = base64Match[1];
+                    }
+                  } catch (e) {}
+                }
                 if (src && src.startsWith('data:image')) {
                   imgSrc = src;
                   break;
@@ -302,11 +315,27 @@ async function getBloggers() {
             }
             
             // 处理图片链接（base64直接使用，其他补全）
-            if (imgSrc && !imgSrc.startsWith('data:image') && !imgSrc.startsWith('http')) {
-              if (imgSrc.startsWith('//')) {
-                imgSrc = 'https:' + imgSrc;
-              } else if (imgSrc.startsWith('/')) {
-                imgSrc = window.location.origin + imgSrc;
+            if (imgSrc) {
+              if (imgSrc.startsWith('data:image')) {
+                // 清理 base64 字符串：移除可能的乱码字符（非 base64 字符）
+                // base64 只包含 A-Z, a-z, 0-9, +, /, = 字符
+                const base64Match = imgSrc.match(/^(data:image\/[^;]+;base64,)([A-Za-z0-9+\/=\s]*)/);
+                if (base64Match) {
+                  // 移除末尾的非 base64 字符（乱码）
+                  let base64Data = base64Match[2].replace(/[^A-Za-z0-9+\/=]/g, '');
+                  // 确保 base64 字符串长度是 4 的倍数（必要时添加填充）
+                  const remainder = base64Data.length % 4;
+                  if (remainder > 0) {
+                    base64Data += '='.repeat(4 - remainder);
+                  }
+                  imgSrc = base64Match[1] + base64Data;
+                }
+              } else if (!imgSrc.startsWith('http')) {
+                if (imgSrc.startsWith('//')) {
+                  imgSrc = 'https:' + imgSrc;
+                } else if (imgSrc.startsWith('/')) {
+                  imgSrc = window.location.origin + imgSrc;
+                }
               }
             }
 
@@ -397,12 +426,12 @@ function generateHTML(bloggers) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>海角博主动态监控站</title>
+<title>动态监控站</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>🌊 海角博主动态监控站</h1>
+  <h1>🌊 动态监控站</h1>
   <p class="update-time">最后更新：${now}</p>
 </header>
 <div class="container">`;
@@ -459,9 +488,16 @@ function generateHTML(bloggers) {
       if (p.images && Array.isArray(p.images) && p.images.length > 0) {
         const firstImg = p.images[0];
         if (firstImg && firstImg.trim() !== '') {
-          // base64图片或普通URL都可以直接使用
+          // base64图片不需要转义，普通URL需要转义引号
+          // 对于src属性，只需要转义引号，base64数据本身不应该被转义
+          let imgSrc = firstImg;
+          if (!imgSrc.startsWith('data:image')) {
+            // 普通URL需要转义引号
+            imgSrc = imgSrc.replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          }
+          // base64图片直接使用，不转义
           imgHtml = `<div class="thumb">
-            <img src="${escapeHtml(firstImg)}" alt="${escapeHtml(p.title)}" loading="lazy" onerror="this.style.display='none'; this.parentElement.style.display='none';">
+            <img src="${imgSrc}" alt="${escapeHtml(p.title)}" loading="lazy" onerror="this.style.display='none'; this.parentElement.style.display='none';">
           </div>`;
         }
       }
@@ -482,7 +518,7 @@ function generateHTML(bloggers) {
 
   html += `</div>
   <footer>
-    <p>Powered by Puppeteer | <a href="https://github.com/${process.env.GITHUB_REPOSITORY || ''}" target="_blank">Github Repo</a></p>
+    <p>2025</a></p>
   </footer>
   </body></html>`;
 
