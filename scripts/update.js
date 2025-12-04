@@ -241,22 +241,45 @@ async function getBloggers() {
               if (timeEl) rawTime = timeEl.innerText.trim();
             }
             
-            // --- 图片（只取第一张）---
+            // --- 图片：从帖子正文中查找第一个img标签 ---
             let imgSrc = '';
+            // 方法1: 先尝试从 .attachments 中查找
             if (container) {
               const attachEl = container.querySelector('.attachments');
               if (attachEl) {
                 const img = attachEl.querySelector('img');
                 if (img) {
                   imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || '';
-                  if (imgSrc && !imgSrc.startsWith('data:image') && !imgSrc.startsWith('http')) {
-                    if (imgSrc.startsWith('//')) {
-                      imgSrc = 'https:' + imgSrc;
-                    } else if (imgSrc.startsWith('/')) {
-                      imgSrc = window.location.origin + imgSrc;
-                    }
-                  }
                 }
+              }
+            }
+            // 方法2: 如果没找到，在整个容器中查找第一个img标签
+            if (!imgSrc && container) {
+              const img = container.querySelector('img');
+              if (img) {
+                imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || '';
+              }
+            }
+            // 方法3: 如果还是没找到，在title的兄弟元素中查找
+            if (!imgSrc) {
+              let sibling = item.nextElementSibling;
+              let checkCount = 0;
+              while (sibling && checkCount < 5) {
+                const img = sibling.querySelector('img');
+                if (img) {
+                  imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                  if (imgSrc) break;
+                }
+                sibling = sibling.nextElementSibling;
+                checkCount++;
+              }
+            }
+            // 处理图片链接（base64直接使用，其他补全）
+            if (imgSrc && !imgSrc.startsWith('data:image') && !imgSrc.startsWith('http')) {
+              if (imgSrc.startsWith('//')) {
+                imgSrc = 'https:' + imgSrc;
+              } else if (imgSrc.startsWith('/')) {
+                imgSrc = window.location.origin + imgSrc;
               }
             }
 
@@ -277,69 +300,88 @@ async function getBloggers() {
       
       console.log(`✓ 数据提取完成，获取到 ${posts.length} 条帖子`);
       
-      // 如果还是没有获取到链接，尝试通过模拟点击获取（添加超时保护）
-      console.log('检查是否需要通过点击获取链接...');
-      for (let i = 0; i < posts.length; i++) {
+      // 通过模拟点击获取链接
+      console.log('开始通过点击获取帖子链接...');
+      const titleElements = await page.$$('.title');
+      
+      for (let i = 0; i < Math.min(posts.length, titleElements.length); i++) {
         if (posts[i].link === '#') {
           try {
-            console.log(`  尝试为第 ${i + 1} 条帖子获取链接...`);
-            // 使用超时保护
-            await Promise.race([
-              (async () => {
-                const titleElements = await page.$$('.title');
-                if (titleElements[i]) {
-                  // 设置导航监听
-                  let capturedUrl = null;
-                  const responseHandler = (response) => {
-                    const url = response.url();
-                    if (url.includes('/post/details') && url.includes('pid=')) {
-                      capturedUrl = url;
-                    }
-                  };
-                  page.on('response', responseHandler);
-                  
-                  try {
-                    // 在新标签页中打开（使用Ctrl+Click模拟）
-                    const targetPromise = new Promise((resolve) => {
-                      const timeout = setTimeout(() => resolve(null), 3000);
-                      page.browser().once('targetcreated', (target) => {
-                        clearTimeout(timeout);
-                        resolve(target.page());
-                      });
-                    });
-                    
-                    await titleElements[i].click({ modifiers: ['Control'] });
-                    const newPage = await targetPromise;
-                    
-                    if (newPage) {
-                      await delay(500);
-                      const newUrl = await newPage.url();
-                      if (newUrl.includes('/post/details')) {
-                        posts[i].link = newUrl;
-                        console.log(`  ✓ 通过点击获取到链接: ${newUrl}`);
+            console.log(`  正在为第 ${i + 1} 条帖子获取链接...`);
+            const titleEl = titleElements[i];
+            
+            // 方法1: 直接点击，监听页面导航
+            const currentUrl = page.url();
+            let newUrl = null;
+            
+            // 监听导航事件
+            const navigationPromise = new Promise((resolve) => {
+              const timeout = setTimeout(() => resolve(null), 5000);
+              const handler = async (target) => {
+                try {
+                  const newPage = await target.page();
+                  await delay(1500);
+                  const url = await newPage.url();
+                  if (url.includes('/post/details')) {
+                    clearTimeout(timeout);
+                    page.browser().off('targetcreated', handler);
+                    await newPage.close();
+                    resolve(url);
+                  }
+                } catch (e) {
+                  // 忽略错误
+                }
+              };
+              page.browser().on('targetcreated', handler);
+            });
+            
+            // 点击标题（Ctrl+点击在新标签打开）
+            await titleEl.click({ modifiers: ['Control'] });
+            await delay(1000);
+            
+            // 等待导航完成
+            newUrl = await navigationPromise;
+            
+            if (newUrl) {
+              posts[i].link = newUrl;
+              console.log(`  ✓ 通过点击获取到链接: ${newUrl}`);
+            } else {
+              // 方法2: 尝试在当前页面点击
+              console.log(`  尝试在当前页面点击...`);
+              await titleEl.click();
+              await delay(3000);
+              
+              const afterClickUrl = page.url();
+              if (afterClickUrl.includes('/post/details') && afterClickUrl !== currentUrl) {
+                posts[i].link = afterClickUrl;
+                console.log(`  ✓ 通过当前页面导航获取到链接: ${afterClickUrl}`);
+                // 返回上一页
+                await page.goBack();
+                await delay(2000);
+              } else {
+                // 方法3: 检查是否有新标签页
+                const targets = page.browser().targets();
+                for (const target of targets) {
+                  if (target.type() === 'page') {
+                    const targetPage = await target.page();
+                    const url = targetPage.url();
+                    if (url.includes('/post/details') && url !== currentUrl) {
+                      posts[i].link = url;
+                      console.log(`  ✓ 从标签页获取到链接: ${url}`);
+                      if (targetPage !== page) {
+                        await targetPage.close();
                       }
-                      await newPage.close();
+                      break;
                     }
-                    
-                    if (capturedUrl && posts[i].link === '#') {
-                      posts[i].link = capturedUrl;
-                      console.log(`  ✓ 通过响应监听获取到链接: ${capturedUrl}`);
-                    }
-                  } finally {
-                    page.off('response', responseHandler);
                   }
                 }
-              })(),
-              new Promise((resolve) => {
-                setTimeout(() => {
-                  console.log(`  ⚠️ 获取链接超时，跳过`);
-                  resolve();
-                }, 5000);
-              })
-            ]);
+              }
+            }
           } catch (err) {
             console.log(`  获取链接失败: ${err.message}`);
           }
+        } else {
+          console.log(`  第 ${i + 1} 条帖子已有链接: ${posts[i].link}`);
         }
       }
 
