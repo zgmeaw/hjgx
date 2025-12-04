@@ -146,6 +146,12 @@ header h1 {
   -webkit-backdrop-filter: var(--blur-sm);
 }
 
+.name-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .card-header .name {
   font-weight: 700;
   font-size: 1.3rem;
@@ -160,6 +166,35 @@ header h1 {
   margin-right: 12px;
   font-size: 1.4rem;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.homepage-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--glass-border);
+  color: var(--text-light);
+  text-decoration: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.homepage-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1) rotate(90deg);
+  box-shadow: 0 4px 12px rgba(255, 107, 157, 0.3);
+}
+
+.homepage-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .badge {
@@ -197,10 +232,8 @@ header h1 {
   align-items: center;
   padding: 24px 28px;
   border-bottom: 1px solid var(--glass-border);
-  text-decoration: none;
   color: inherit;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
   position: relative;
   overflow: hidden;
 }
@@ -226,11 +259,10 @@ header h1 {
 }
 
 .post-item:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.1);
   backdrop-filter: var(--blur-sm);
   -webkit-backdrop-filter: var(--blur-sm);
   padding-left: 32px;
-  transform: translateX(4px);
 }
 
 .post-info {
