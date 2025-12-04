@@ -14,6 +14,23 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
+// 从主页链接中提取博主ID
+function extractBloggerId(url) {
+  if (!url) return null;
+  // 匹配链接末尾的数字
+  const match = url.match(/\/(\d+)(?:\?|$)/);
+  return match ? match[1] : null;
+}
+
+// 生成Google搜索链接
+function generateGoogleSearchUrl(bloggerId) {
+  if (!bloggerId) return '#';
+  // 从环境变量读取搜索域名，如果没有设置则返回 #
+  const searchDomain = process.env.GOOGLE_SEARCH_DOMAIN;
+  if (!searchDomain) return '#';
+  return `https://www.google.com/search?q=${bloggerId}&q=site%3A${encodeURIComponent(searchDomain)}`;
+}
+
 // 生成邮件HTML内容（类似网页效果）
 function generateEmailHTML(bloggers) {
   const today = new Date().toLocaleDateString('zh-CN', { 
@@ -97,7 +114,8 @@ function generateEmailHTML(bloggers) {
     content: "👤";
     margin-right: 8px;
   }
-  .homepage-link {
+  .homepage-link,
+  .search-link {
     display: inline-block;
     width: 32px;
     height: 32px;
@@ -113,6 +131,15 @@ function generateEmailHTML(bloggers) {
   }
   .homepage-link:hover {
     background: rgba(102, 126, 234, 0.3);
+    transform: scale(1.1);
+  }
+  .search-link {
+    background: rgba(66, 133, 244, 0.2);
+    border: 1px solid rgba(66, 133, 244, 0.3);
+    color: #4285f4;
+  }
+  .search-link:hover {
+    background: rgba(66, 133, 244, 0.3);
     transform: scale(1.1);
   }
   .badge {
@@ -213,6 +240,8 @@ function generateEmailHTML(bloggers) {
     bloggers.forEach((blogger) => {
       const { nickname, posts, homepageUrl } = blogger;
       const newCount = posts.filter(p => p.isToday).length;
+      const bloggerId = extractBloggerId(homepageUrl);
+      const googleSearchUrl = generateGoogleSearchUrl(bloggerId);
       
       html += `<div class="card">
         <div class="card-header">
@@ -220,6 +249,9 @@ function generateEmailHTML(bloggers) {
             <span class="name">${escapeHtml(nickname)}</span>
             <a href="${escapeHtml(homepageUrl || '#')}" target="_blank" class="homepage-link" title="访问博主主页">
               ↗
+            </a>
+            <a href="${escapeHtml(googleSearchUrl)}" target="_blank" class="search-link" title="Google搜索">
+              🔍
             </a>
           </div>
           ${newCount > 0 ? '<span class="badge">✨ 今日更新</span>' : ''}

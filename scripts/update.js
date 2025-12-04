@@ -1,4 +1,4 @@
-// scripts/update.js —— 针对海角社区优化版
+
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
@@ -441,6 +441,23 @@ function generateHTML(bloggers) {
       .replace(/'/g, '&#039;');
   };
   
+  // 从主页链接中提取博主ID
+  const extractBloggerId = (url) => {
+    if (!url) return null;
+    // 匹配链接末尾的数字
+    const match = url.match(/\/(\d+)(?:\?|$)/);
+    return match ? match[1] : null;
+  };
+  
+  // 生成Google搜索链接
+  const generateGoogleSearchUrl = (bloggerId) => {
+    if (!bloggerId) return '#';
+    // 从环境变量读取搜索域名，如果没有设置则返回 #
+    const searchDomain = process.env.GOOGLE_SEARCH_DOMAIN;
+    if (!searchDomain) return '#';
+    return `https://www.google.com/search?q=${bloggerId}&q=site%3A${encodeURIComponent(searchDomain)}`;
+  };
+  
   // 美化 HTML 模板
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -465,6 +482,9 @@ function generateHTML(bloggers) {
     
     // 只有当有帖子时才显示
     if (posts.length === 0) {
+      const bloggerId = extractBloggerId(homepageUrl);
+      const googleSearchUrl = generateGoogleSearchUrl(bloggerId);
+      
       html += `<div class="card">
         <div class="card-header">
           <div class="name-wrapper">
@@ -476,6 +496,12 @@ function generateHTML(bloggers) {
                 <line x1="10" y1="14" x2="21" y2="3"></line>
               </svg>
             </a>
+            <a href="${escapeHtml(googleSearchUrl)}" target="_blank" class="search-btn" title="Google搜索">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+            </a>
           </div>
         </div>
         <div class="post-list">
@@ -484,6 +510,9 @@ function generateHTML(bloggers) {
       </div>`;
       return;
     }
+    
+    const bloggerId = extractBloggerId(homepageUrl);
+    const googleSearchUrl = generateGoogleSearchUrl(bloggerId);
     
     html += `<div class="card">
       <div class="card-header">
@@ -494,6 +523,12 @@ function generateHTML(bloggers) {
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
               <polyline points="15 3 21 3 21 9"></polyline>
               <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+          <a href="${escapeHtml(googleSearchUrl)}" target="_blank" class="search-btn" title="Google搜索">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
             </svg>
           </a>
         </div>

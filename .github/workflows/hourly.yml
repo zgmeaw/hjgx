@@ -32,6 +32,8 @@ jobs:
           PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
           # 从 GitHub Secrets 读取博主链接（每行一个链接）
           BLOGGER_LINKS: ${{ secrets.BLOGGER_LINKS }}
+          # Google 搜索域名（必需，未设置时搜索按钮将不可用）
+          GOOGLE_SEARCH_DOMAIN: ${{ secrets.GOOGLE_SEARCH_DOMAIN }}
 
       # 如果脚本生成了 debug 图片，上传以便查看
       - name: Upload Debug Artifacts
