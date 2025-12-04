@@ -1,15 +1,26 @@
 name: Daily Email
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # 允许手动触发
   schedule:
-    - cron: '0 14 * * *'    # UTC 14点 = 北京22点
+    - cron: '0 14 * * *'  # UTC 14点 = 北京22点
+
 jobs:
   email:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
       - name: Send email
         env:
           QQ_MAIL: ${{ secrets.QQ_MAIL }}
           QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
-        run: python scripts/send_email.py
+        run: node scripts/send_email.js

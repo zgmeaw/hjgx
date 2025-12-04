@@ -526,9 +526,55 @@ function generateHTML(bloggers) {
   console.log('HTML 生成完毕');
 }
 
+// 保存当天有更新的博主数据
+function saveDailyUpdates(bloggers) {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const dailyFile = path.join(__dirname, `../data/daily_${today}.json`);
+  const dataDir = path.join(__dirname, '../data');
+  
+  // 确保 data 目录存在
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  
+  // 筛选出当天有更新的博主
+  const todayUpdates = bloggers
+    .filter(blogger => {
+      const hasTodayPosts = blogger.posts.some(p => p.isToday);
+      return hasTodayPosts && blogger.posts.length > 0;
+    })
+    .map(blogger => ({
+      nickname: blogger.nickname,
+      homepageUrl: blogger.homepageUrl,
+      posts: blogger.posts.map(p => ({
+        title: p.title,
+        time: p.time,
+        isToday: p.isToday,
+        images: p.images
+      }))
+    }));
+  
+  // 保存到文件
+  if (todayUpdates.length > 0) {
+    fs.writeFileSync(dailyFile, JSON.stringify(todayUpdates, null, 2), 'utf-8');
+    console.log(`✓ 已保存 ${todayUpdates.length} 个博主的今日更新到 ${dailyFile}`);
+  } else {
+    // 如果没有更新，删除当天的文件（如果存在）
+    if (fs.existsSync(dailyFile)) {
+      fs.unlinkSync(dailyFile);
+      console.log(`✓ 今日无更新，已删除 ${dailyFile}`);
+    } else {
+      console.log('✓ 今日无更新');
+    }
+  }
+  
+  return todayUpdates.length > 0;
+}
+
 async function main() {
   const bloggers = await getBloggers();
   generateHTML(bloggers);
+  saveDailyUpdates(bloggers);
 }
 
 main().catch(console.error);
