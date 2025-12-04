@@ -124,28 +124,60 @@ async function getBloggers() {
       }
 
       // 4. 核心：等待帖子列表加载
-      // 使用 .title 选择器（实际HTML中使用的是 .title 而不是 .titlerow）
-      console.log('正在等待帖子列表 (.title) 加载...');
+      console.log('正在等待帖子列表加载...');
+      
+      // 先等待页面基本加载完成
+      await delay(3000);
+      
+      // 检查页面中是否有 .title 元素（不阻塞）
+      let hasTitle = false;
       try {
-        // 最多等待 15 秒
-        await page.waitForSelector('.title', { timeout: 15000 });
+        hasTitle = await page.evaluate(() => {
+          return document.querySelectorAll('.title').length > 0;
+        });
       } catch (e) {
-        console.log('⚠️ 超时未找到 .title，尝试使用备用选择器...');
-        // 尝试备用选择器
-        try {
-          await page.waitForSelector('.titlerow', { timeout: 5000 });
-          console.log('找到备用选择器 .titlerow');
-        } catch (e2) {
-          console.log('⚠️ 未找到任何帖子选择器，尝试截图调试...');
-          await page.screenshot({ path: `debug_error_${Date.now()}.jpg` });
-          const html = await page.content();
-          fs.writeFileSync(`debug_source_${Date.now()}.html`, html);
-          console.log('已保存调试截图和HTML，请检查 artifact。');
-        }
+        console.log('检查页面元素时出错:', e.message);
       }
+      
+      if (!hasTitle) {
+        console.log('⚠️ 未找到 .title 元素，等待更长时间...');
+        try {
+          // 最多等待 8 秒
+          await Promise.race([
+            page.waitForSelector('.title', { timeout: 8000 }),
+            new Promise((resolve) => setTimeout(resolve, 8000)) // 强制超时
+          ]);
+          hasTitle = await page.evaluate(() => {
+            return document.querySelectorAll('.title').length > 0;
+          });
+          if (hasTitle) {
+            console.log('✓ 找到 .title 选择器');
+          }
+        } catch (e) {
+          console.log('⚠️ 等待超时，继续尝试提取数据...');
+        }
+      } else {
+        console.log('✓ 页面中已存在 .title 元素');
+      }
+      
+      // 额外等待一下，确保动态内容加载完成
+      await delay(2000);
 
       // 5. 提取帖子数据 - 使用模拟点击获取链接
-      const posts = await page.evaluate(async () => {
+      console.log('开始提取帖子数据...');
+      
+      // 先检查一下页面中有哪些元素
+      const pageInfo = await page.evaluate(() => {
+        return {
+          titleCount: document.querySelectorAll('.title').length,
+          titlerowCount: document.querySelectorAll('.titlerow').length,
+          url: window.location.href,
+          bodyLength: document.body ? document.body.innerText.length : 0
+        };
+      });
+      console.log('页面信息:', pageInfo);
+      
+      const posts = await page.evaluate(() => {
         const todayStr = new Date().toISOString().slice(5, 10); // "12-03"
         // 优先使用 .title，如果没有则使用 .titlerow
         let items = document.querySelectorAll('.title');
