@@ -178,214 +178,167 @@ async function getBloggers() {
       console.log('页面信息:', pageInfo);
       console.log('开始执行数据提取（最多等待30秒）...');
       
-      // 使用超时保护，避免卡住
-      const posts = await Promise.race([
-        page.evaluate(() => {
-          const todayStr = new Date().toISOString().slice(5, 10); // "12-03"
-          // 优先使用 .title，如果没有则使用 .titlerow
-          let items = document.querySelectorAll('.title');
-          if (items.length === 0) {
-            items = document.querySelectorAll('.titlerow');
-          }
-          const results = [];
+      // 简化提取逻辑，避免超时
+      console.log('开始快速提取数据...');
+      const posts = await page.evaluate(() => {
+        const todayStr = new Date().toISOString().slice(5, 10); // "12-03"
+        const items = document.querySelectorAll('.title');
+        const results = [];
 
-          for (let idx = 0; idx < Math.min(items.length, 3); idx++) {
-            try {
-              const item = items[idx];
-              
-              // --- 找到包含 title 的父容器 ---
-              let container = item.parentElement;
-              let depth = 0;
-              while (container && depth < 8) {
-                try {
-                  const hasTime = container.querySelector('.createTime');
-                  const hasAttach = container.querySelector('.attachments');
-                  if (hasTime || hasAttach) break;
-                } catch (e) {}
-                container = container.parentElement;
-                depth++;
-              }
-              if (!container) container = item.parentElement;
+        for (let idx = 0; idx < Math.min(items.length, 3); idx++) {
+          try {
+            const item = items[idx];
+            
+            // --- 标题 ---
+            const title = item.innerText.trim() || item.getAttribute('title') || '';
+            if (!title) continue;
 
-              // --- 标题 ---
-              const title = item.innerText.trim() || item.getAttribute('title') || '';
-              if (!title) continue;
-
-              // --- 链接：尝试多种方式获取pid ---
-              let link = '';
-              let pid = null;
-              
-              // 方法1: 从元素的数据属性中查找pid（简化版，避免卡住）
+            // --- 找到包含 title 的父容器（简化查找）---
+            let container = item.parentElement;
+            let depth = 0;
+            while (container && depth < 5) {
               try {
-                let searchEl = container || item;
-                for (let d = 0; d < 4; d++) {
-                  if (!searchEl) break;
-                  // 只检查关键属性，避免遍历所有属性
-                  const attrs = ['data-pid', 'data-id', 'data-post-id', 'id', 'data-href', 'data-url'];
-                  for (const attrName of attrs) {
-                    const value = searchEl.getAttribute(attrName);
-                    if (value) {
-                      const pidMatch = value.match(/pid[=:](\d+)/i) || value.match(/[?&]pid=(\d+)/i) || value.match(/(\d{6,})/);
-                      if (pidMatch) {
-                        pid = pidMatch[1];
-                        break;
-                      }
-                    }
-                  }
-                  if (pid) break;
-                  searchEl = searchEl.parentElement;
+                if (container.querySelector('.createTime') || container.querySelector('.attachments')) {
+                  break;
                 }
               } catch (e) {}
-              
-              // 方法2: 从Vue实例中获取（添加异常保护）
-              if (!pid) {
-                try {
-                  if (item.__vue__) {
-                    const vue = item.__vue__;
-                    if (vue.$attrs && vue.$attrs.to) {
-                      const to = String(vue.$attrs.to);
-                      const pidMatch = to.match(/pid[=:](\d+)/i) || to.match(/[?&]pid=(\d+)/i) || to.match(/(\d{6,})/);
-                      if (pidMatch) pid = pidMatch[1];
-                    }
-                  }
-                } catch (e) {}
-              }
-              
-              // 构建链接
-              if (pid) {
-                link = `https://www.haijiao.com/post/details?pid=${pid}`;
-              }
-
-              // --- 时间 ---
-              let rawTime = '';
-              try {
-                if (container) {
-                  const timeEl = container.querySelector('.createTime');
-                  if (timeEl) {
-                    rawTime = timeEl.innerText.trim();
-                  }
-                }
-                if (!rawTime) {
-                  let sibling = item.nextElementSibling;
-                  let checkCount = 0;
-                  while (sibling && checkCount < 5) {
-                    if (sibling.classList && sibling.classList.contains('createTime')) {
-                      rawTime = sibling.innerText.trim();
-                      break;
-                    }
-                    sibling = sibling.nextElementSibling;
-                    checkCount++;
-                  }
-                }
-              } catch (e) {}
-              
-              // --- 图片 ---
-              let imgArr = [];
-              try {
-                if (container) {
-                  const attachEl = container.querySelector('.attachments');
-                  if (attachEl) {
-                    const imgs = attachEl.querySelectorAll('img');
-                    for (let i = 0; i < Math.min(imgs.length, 3); i++) {
-                      const img = imgs[i];
-                      let src = img.getAttribute('src') || 
-                               img.getAttribute('data-src') || 
-                               img.getAttribute('data-original') ||
-                               img.getAttribute('data-lazy-src');
-                      if (src && src.trim() !== '') {
-                        if (src.startsWith('data:image')) {
-                          imgArr.push(src);
-                        } else if (src.startsWith('//')) {
-                          imgArr.push('https:' + src);
-                        } else if (src.startsWith('/')) {
-                          imgArr.push(window.location.origin + src);
-                        } else if (src.startsWith('http')) {
-                          imgArr.push(src);
-                        }
-                      }
-                    }
-                  }
-                }
-                imgArr = imgArr.filter(src => {
-                  if (src.startsWith('data:image')) return true;
-                  return !src.includes('placeholder') && !src.includes('blank') && src.length > 10;
-                });
-              } catch (e) {}
-
-              if (title) {
-                results.push({
-                  title,
-                  link: link || '#',
-                  time: rawTime || '未知时间',
-                  isToday: rawTime.includes(todayStr),
-                  images: imgArr.slice(0, 1) // 只取第一张
-                });
-              }
-            } catch (err) {
-              // 如果单个帖子处理出错，跳过继续处理下一个
-              console.error('处理帖子时出错:', err);
+              container = container.parentElement;
+              depth++;
             }
-          }
+            if (!container) container = item.parentElement;
 
-          return results;
-        }),
-        new Promise((resolve) => {
-          // 30秒超时保护
-          setTimeout(() => {
-            console.log('⚠️ 提取数据超时（30秒），返回空结果');
-            resolve([]);
-          }, 30000);
-        })
-      ]);
+            // --- 链接：快速查找pid（只检查最可能的位置）---
+            let link = '';
+            let pid = null;
+            
+            // 快速方法：只检查元素本身和直接父元素的常见属性
+            try {
+              const checkAttrs = (el) => {
+                if (!el) return null;
+                const attrs = ['data-pid', 'data-id', 'id'];
+                for (const attrName of attrs) {
+                  const value = el.getAttribute(attrName);
+                  if (value) {
+                    const match = value.match(/(\d{6,})/);
+                    if (match) return match[1];
+                  }
+                }
+                return null;
+              };
+              
+              pid = checkAttrs(item) || checkAttrs(container) || checkAttrs(item.parentElement);
+            } catch (e) {}
+            
+            // 构建链接
+            if (pid) {
+              link = `https://www.haijiao.com/post/details?pid=${pid}`;
+            }
+
+            // --- 时间 ---
+            let rawTime = '';
+            if (container) {
+              const timeEl = container.querySelector('.createTime');
+              if (timeEl) rawTime = timeEl.innerText.trim();
+            }
+            
+            // --- 图片（只取第一张）---
+            let imgSrc = '';
+            if (container) {
+              const attachEl = container.querySelector('.attachments');
+              if (attachEl) {
+                const img = attachEl.querySelector('img');
+                if (img) {
+                  imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                  if (imgSrc && !imgSrc.startsWith('data:image') && !imgSrc.startsWith('http')) {
+                    if (imgSrc.startsWith('//')) {
+                      imgSrc = 'https:' + imgSrc;
+                    } else if (imgSrc.startsWith('/')) {
+                      imgSrc = window.location.origin + imgSrc;
+                    }
+                  }
+                }
+              }
+            }
+
+            results.push({
+              title,
+              link: link || '#',
+              time: rawTime || '未知时间',
+              isToday: rawTime.includes(todayStr),
+              images: imgSrc ? [imgSrc] : []
+            });
+          } catch (e) {
+            // 跳过出错的帖子
+          }
+        }
+
+        return results;
+      });
       
       console.log(`✓ 数据提取完成，获取到 ${posts.length} 条帖子`);
       
-      // 如果还是没有获取到链接，尝试通过模拟点击获取
+      // 如果还是没有获取到链接，尝试通过模拟点击获取（添加超时保护）
+      console.log('检查是否需要通过点击获取链接...');
       for (let i = 0; i < posts.length; i++) {
         if (posts[i].link === '#') {
           try {
-            // 获取对应的title元素
-            const titleElements = await page.$$('.title');
-            if (titleElements[i]) {
-              // 设置导航监听
-              let capturedUrl = null;
-              const responseHandler = (response) => {
-                const url = response.url();
-                if (url.includes('/post/details') && url.includes('pid=')) {
-                  capturedUrl = url;
+            console.log(`  尝试为第 ${i + 1} 条帖子获取链接...`);
+            // 使用超时保护
+            await Promise.race([
+              (async () => {
+                const titleElements = await page.$$('.title');
+                if (titleElements[i]) {
+                  // 设置导航监听
+                  let capturedUrl = null;
+                  const responseHandler = (response) => {
+                    const url = response.url();
+                    if (url.includes('/post/details') && url.includes('pid=')) {
+                      capturedUrl = url;
+                    }
+                  };
+                  page.on('response', responseHandler);
+                  
+                  try {
+                    // 在新标签页中打开（使用Ctrl+Click模拟）
+                    const targetPromise = new Promise((resolve) => {
+                      const timeout = setTimeout(() => resolve(null), 3000);
+                      page.browser().once('targetcreated', (target) => {
+                        clearTimeout(timeout);
+                        resolve(target.page());
+                      });
+                    });
+                    
+                    await titleElements[i].click({ modifiers: ['Control'] });
+                    const newPage = await targetPromise;
+                    
+                    if (newPage) {
+                      await delay(500);
+                      const newUrl = await newPage.url();
+                      if (newUrl.includes('/post/details')) {
+                        posts[i].link = newUrl;
+                        console.log(`  ✓ 通过点击获取到链接: ${newUrl}`);
+                      }
+                      await newPage.close();
+                    }
+                    
+                    if (capturedUrl && posts[i].link === '#') {
+                      posts[i].link = capturedUrl;
+                      console.log(`  ✓ 通过响应监听获取到链接: ${capturedUrl}`);
+                    }
+                  } finally {
+                    page.off('response', responseHandler);
+                  }
                 }
-              };
-              page.on('response', responseHandler);
-              
-              // 在新标签页中打开（使用Ctrl+Click模拟）
-              const [newPage] = await Promise.all([
-                new Promise((resolve) => {
-                  page.browser().on('targetcreated', (target) => {
-                    resolve(target.page());
-                  });
-                }),
-                titleElements[i].click({ modifiers: ['Control'] })
-              ]);
-              
-              await delay(1000);
-              
-              if (newPage) {
-                const newUrl = await newPage.url();
-                if (newUrl.includes('/post/details')) {
-                  posts[i].link = newUrl;
-                }
-                await newPage.close();
-              }
-              
-              page.off('response', responseHandler);
-              
-              // 如果还是没获取到，尝试从URL参数中提取
-              if (posts[i].link === '#' && capturedUrl) {
-                posts[i].link = capturedUrl;
-              }
-            }
+              })(),
+              new Promise((resolve) => {
+                setTimeout(() => {
+                  console.log(`  ⚠️ 获取链接超时，跳过`);
+                  resolve();
+                }, 5000);
+              })
+            ]);
           } catch (err) {
-            console.log(`  模拟点击获取链接失败: ${err.message}`);
+            console.log(`  获取链接失败: ${err.message}`);
           }
         }
       }
