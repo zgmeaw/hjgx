@@ -241,39 +241,93 @@ async function getBloggers() {
               if (timeEl) rawTime = timeEl.innerText.trim();
             }
             
-            // --- 图片：从帖子正文中查找第一个img标签 ---
+            // --- 图片：从帖子正文中查找第一个img标签（广泛搜索）---
             let imgSrc = '';
-            // 方法1: 先尝试从 .attachments 中查找
+            
+            // 方法1: 从 .attachments 中查找
             if (container) {
               const attachEl = container.querySelector('.attachments');
               if (attachEl) {
-                const img = attachEl.querySelector('img');
-                if (img) {
-                  imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                const imgs = attachEl.querySelectorAll('img');
+                for (const img of imgs) {
+                  imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '';
+                  if (imgSrc) break;
                 }
               }
             }
-            // 方法2: 如果没找到，在整个容器中查找第一个img标签
+            
+            // 方法2: 在整个容器中查找所有img标签（优先base64）
             if (!imgSrc && container) {
-              const img = container.querySelector('img');
-              if (img) {
-                imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || '';
+              const imgs = container.querySelectorAll('img');
+              // 先找base64图片
+              for (const img of imgs) {
+                const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '';
+                if (src && src.startsWith('data:image')) {
+                  imgSrc = src;
+                  break;
+                }
+              }
+              // 如果没找到base64，找其他图片
+              if (!imgSrc) {
+                for (const img of imgs) {
+                  const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '';
+                  if (src && src.length > 20 && !src.includes('placeholder') && !src.includes('blank')) {
+                    imgSrc = src;
+                    break;
+                  }
+                }
               }
             }
-            // 方法3: 如果还是没找到，在title的兄弟元素中查找
+            
+            // 方法3: 在title的父级和兄弟元素中广泛搜索
+            if (!imgSrc) {
+              // 向上查找父级
+              let parent = item.parentElement;
+              for (let d = 0; d < 5 && parent; d++) {
+                const imgs = parent.querySelectorAll('img');
+                // 优先base64
+                for (const img of imgs) {
+                  const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                  if (src && src.startsWith('data:image')) {
+                    imgSrc = src;
+                    break;
+                  }
+                }
+                if (!imgSrc) {
+                  for (const img of imgs) {
+                    const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                    if (src && src.length > 20) {
+                      imgSrc = src;
+                      break;
+                    }
+                  }
+                }
+                if (imgSrc) break;
+                parent = parent.parentElement;
+              }
+            }
+            
+            // 方法4: 在title的兄弟元素中查找
             if (!imgSrc) {
               let sibling = item.nextElementSibling;
               let checkCount = 0;
-              while (sibling && checkCount < 5) {
-                const img = sibling.querySelector('img');
-                if (img) {
-                  imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || '';
-                  if (imgSrc) break;
+              while (sibling && checkCount < 10) {
+                if (sibling.querySelectorAll) {
+                  const imgs = sibling.querySelectorAll('img');
+                  for (const img of imgs) {
+                    const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                    if (src && (src.startsWith('data:image') || src.length > 20)) {
+                      imgSrc = src;
+                      break;
+                    }
+                  }
                 }
+                if (imgSrc) break;
                 sibling = sibling.nextElementSibling;
                 checkCount++;
               }
             }
+            
             // 处理图片链接（base64直接使用，其他补全）
             if (imgSrc && !imgSrc.startsWith('data:image') && !imgSrc.startsWith('http')) {
               if (imgSrc.startsWith('//')) {
@@ -303,6 +357,7 @@ async function getBloggers() {
       // 通过模拟点击获取链接
       console.log('开始通过点击获取帖子链接...');
       const titleElements = await page.$$('.title');
+      const originalUrl = page.url();
       
       for (let i = 0; i < Math.min(posts.length, titleElements.length); i++) {
         if (posts[i].link === '#') {
@@ -310,70 +365,77 @@ async function getBloggers() {
             console.log(`  正在为第 ${i + 1} 条帖子获取链接...`);
             const titleEl = titleElements[i];
             
-            // 方法1: 直接点击，监听页面导航
+            // 方法1: 在当前页面点击，监听导航
+            const navigationPromise = page.waitForNavigation({ 
+              waitUntil: 'networkidle2', 
+              timeout: 10000 
+            }).catch(() => null);
+            
+            // 点击标题
+            await titleEl.click();
+            await delay(2000);
+            
+            // 检查是否导航了
+            const newUrl = await navigationPromise;
             const currentUrl = page.url();
-            let newUrl = null;
             
-            // 监听导航事件
-            const navigationPromise = new Promise((resolve) => {
-              const timeout = setTimeout(() => resolve(null), 5000);
-              const handler = async (target) => {
-                try {
-                  const newPage = await target.page();
-                  await delay(1500);
-                  const url = await newPage.url();
-                  if (url.includes('/post/details')) {
-                    clearTimeout(timeout);
-                    page.browser().off('targetcreated', handler);
-                    await newPage.close();
-                    resolve(url);
-                  }
-                } catch (e) {
-                  // 忽略错误
-                }
-              };
-              page.browser().on('targetcreated', handler);
-            });
-            
-            // 点击标题（Ctrl+点击在新标签打开）
-            await titleEl.click({ modifiers: ['Control'] });
-            await delay(1000);
-            
-            // 等待导航完成
-            newUrl = await navigationPromise;
-            
-            if (newUrl) {
-              posts[i].link = newUrl;
-              console.log(`  ✓ 通过点击获取到链接: ${newUrl}`);
+            if (currentUrl.includes('/post/details') && currentUrl !== originalUrl) {
+              posts[i].link = currentUrl;
+              console.log(`  ✓ 通过页面导航获取到链接: ${currentUrl}`);
+              // 返回上一页
+              await page.goBack({ waitUntil: 'networkidle2' });
+              await delay(2000);
             } else {
-              // 方法2: 尝试在当前页面点击
-              console.log(`  尝试在当前页面点击...`);
-              await titleEl.click();
+              // 方法2: 尝试Ctrl+点击在新标签页打开
+              console.log(`  尝试在新标签页打开...`);
+              
+              // 记录当前标签页数量
+              const targetsBefore = page.browser().targets().length;
+              
+              // Ctrl+点击
+              await titleEl.click({ modifiers: ['Control'] });
               await delay(3000);
               
-              const afterClickUrl = page.url();
-              if (afterClickUrl.includes('/post/details') && afterClickUrl !== currentUrl) {
-                posts[i].link = afterClickUrl;
-                console.log(`  ✓ 通过当前页面导航获取到链接: ${afterClickUrl}`);
-                // 返回上一页
-                await page.goBack();
-                await delay(2000);
-              } else {
-                // 方法3: 检查是否有新标签页
-                const targets = page.browser().targets();
-                for (const target of targets) {
+              // 检查是否有新标签页
+              const targetsAfter = page.browser().targets();
+              if (targetsAfter.length > targetsBefore) {
+                // 找到新创建的标签页
+                for (const target of targetsAfter) {
                   if (target.type() === 'page') {
-                    const targetPage = await target.page();
-                    const url = targetPage.url();
-                    if (url.includes('/post/details') && url !== currentUrl) {
+                    const newPage = await target.page();
+                    const url = newPage.url();
+                    if (url.includes('/post/details')) {
                       posts[i].link = url;
-                      console.log(`  ✓ 从标签页获取到链接: ${url}`);
-                      if (targetPage !== page) {
-                        await targetPage.close();
-                      }
+                      console.log(`  ✓ 从新标签页获取到链接: ${url}`);
+                      await newPage.close();
                       break;
                     }
                   }
+                }
+              }
+              
+              // 方法3: 监听响应URL
+              if (posts[i].link === '#') {
+                // 重新点击，监听响应
+                let capturedUrl = null;
+                const responseHandler = (response) => {
+                  const url = response.url();
+                  if (url.includes('/post/details') && url.includes('pid=')) {
+                    capturedUrl = url;
+                  }
+                };
+                page.on('response', responseHandler);
+                
+                try {
+                  await titleEl.click();
+                  await delay(3000);
+                  
+                  if (capturedUrl) {
+                    posts[i].link = capturedUrl;
+                    console.log(`  ✓ 通过响应监听获取到链接: ${capturedUrl}`);
+                  }
+                } finally {
+                  page.off('response', responseHandler);
                 }
               }
             }
