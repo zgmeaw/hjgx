@@ -185,6 +185,7 @@ async function getBloggers() {
           // --- 链接 ---
           // 尝试多种方式获取链接
           let link = '';
+          
           // 1. title 本身可能是链接
           if (item.tagName === 'A') {
             link = item.getAttribute('href') || '';
@@ -196,7 +197,8 @@ async function getBloggers() {
               link = linkEl.getAttribute('href') || '';
             }
           }
-          // 3. 在父容器中查找链接（优先查找包含 title 的链接）
+          
+          // 3. 在父容器中查找链接
           if (!link && container) {
             // 查找包含当前 title 元素的链接
             const containerLink = container.closest('a');
@@ -211,6 +213,7 @@ async function getBloggers() {
               }
             }
           }
+          
           // 4. 如果 title 的父元素是链接
           if (!link) {
             const parentLink = item.closest('a');
@@ -219,76 +222,99 @@ async function getBloggers() {
             }
           }
           
-          // 补全链接（相对路径转绝对路径）
-          if (link && !link.startsWith('http')) {
-            if (link.startsWith('/')) {
-              link = window.location.origin + link;
-            } else if (link.startsWith('./') || link.startsWith('../')) {
-              // 处理相对路径
-              const baseUrl = window.location.href.split('/').slice(0, -1).join('/');
-              link = new URL(link, baseUrl + '/').href;
-            } else {
-              link = window.location.origin + '/' + link;
-            }
-          }
-          
-          // 如果还是没有链接，尝试从标题元素构建（某些情况下链接可能在数据属性中）
+          // 5. 尝试从数据属性获取链接
           if (!link || link === '#') {
-            const dataLink = item.getAttribute('data-href') || 
-                           item.getAttribute('data-url') ||
-                           (item.closest('[data-href]') && item.closest('[data-href]').getAttribute('data-href'));
+            let searchEl = container || item;
+            const dataLink = searchEl.getAttribute('data-href') || 
+                           searchEl.getAttribute('data-url') ||
+                           item.getAttribute('data-href') ||
+                           item.getAttribute('data-url');
             if (dataLink) {
               link = dataLink.startsWith('http') ? dataLink : window.location.origin + dataLink;
             }
           }
           
-          // 如果还是没有链接，尝试从标题的 title 属性或其他属性中获取
-          // 某些情况下，链接可能通过点击事件绑定，我们尝试从 onclick 或其他属性获取
+          // 6. 尝试从点击事件或Vue路由中获取链接
+          // 海角社区可能使用Vue Router，链接可能在@click事件中
           if (!link || link === '#') {
-            // 查找可能包含链接的父元素
-            let parent = item.parentElement;
-            let checkDepth = 0;
-            while (parent && checkDepth < 3) {
-              const onclick = parent.getAttribute('onclick');
-              if (onclick && onclick.includes('http')) {
-                const urlMatch = onclick.match(/https?:\/\/[^\s"']+/);
-                if (urlMatch) {
-                  link = urlMatch[0];
-                  break;
-                }
+            let searchEl = container || item;
+            // 查找可能包含路由信息的元素
+            const clickHandler = searchEl.getAttribute('@click') || 
+                               searchEl.getAttribute('v-on:click') ||
+                               searchEl.getAttribute('onclick');
+            
+            // 尝试从Vue路由信息中提取
+            // 某些情况下，Vue组件可能有路由信息
+            if (clickHandler) {
+              // 尝试匹配路由路径，如 /post/123 或 /thread/123
+              const routeMatch = clickHandler.match(/['"`]([/][^'"`]+)['"`]/);
+              if (routeMatch) {
+                link = window.location.origin + routeMatch[1];
               }
-              // 检查是否有 data-* 属性包含链接
-              for (const attr of parent.attributes) {
-                if (attr.name.startsWith('data-') && attr.value && attr.value.includes('http')) {
-                  const urlMatch = attr.value.match(/https?:\/\/[^\s"']+/);
-                  if (urlMatch) {
-                    link = urlMatch[0];
-                    break;
-                  }
-                }
-              }
-              if (link && link !== '#') break;
-              parent = parent.parentElement;
-              checkDepth++;
             }
           }
           
-          // 最后尝试：如果标题有 hjbox-linkcolor 类，可能是通过路由跳转
-          // 这种情况下，链接可能不在href中，而是通过JavaScript路由
-          // 我们可以尝试从容器中查找可能的帖子ID或路径信息
+          // 7. 尝试从容器或元素的ID/数据属性中构建链接
           if (!link || link === '#') {
-            // 查找可能包含帖子ID的元素
             let searchEl = container || item;
+            // 查找可能包含帖子ID的元素
             const possibleId = searchEl.getAttribute('data-id') || 
                               searchEl.getAttribute('data-post-id') || 
+                              searchEl.getAttribute('data-thread-id') ||
                               searchEl.getAttribute('id');
-            if (possibleId && /^\d+$/.test(possibleId)) {
-              // 如果当前页面是用户主页，尝试构建帖子链接
-              const currentPath = window.location.pathname;
-              if (currentPath.includes('/homepage/last/')) {
-                // 海角社区可能的帖子链接格式
-                link = window.location.origin + '/post/' + possibleId;
+            
+            if (possibleId) {
+              // 尝试从ID中提取数字
+              const idMatch = String(possibleId).match(/\d+/);
+              if (idMatch) {
+                const currentPath = window.location.pathname;
+                // 根据当前路径判断可能的链接格式
+                if (currentPath.includes('/homepage/last/')) {
+                  // 尝试几种可能的链接格式
+                  const possibleLinks = [
+                    window.location.origin + '/post/' + idMatch[0],
+                    window.location.origin + '/thread/' + idMatch[0],
+                    window.location.origin + '/topic/' + idMatch[0],
+                    window.location.origin + '/article/' + idMatch[0]
+                  ];
+                  // 使用第一个可能的链接（可以根据实际情况调整）
+                  link = possibleLinks[0];
+                }
               }
+            }
+          }
+          
+          // 8. 如果标题有 hjbox-linkcolor 类，尝试查找相关的路由信息
+          // 某些情况下，可能需要点击标题才能获取链接，这里我们尝试从页面结构推断
+          if (!link || link === '#') {
+            // 查找标题附近的元素，看是否有路由相关的信息
+            let sibling = item.nextElementSibling;
+            let checkCount = 0;
+            while (sibling && checkCount < 3) {
+              const siblingLink = sibling.querySelector('a');
+              if (siblingLink) {
+                link = siblingLink.getAttribute('href') || '';
+                if (link) break;
+              }
+              sibling = sibling.nextElementSibling;
+              checkCount++;
+            }
+          }
+          
+          // 补全链接（相对路径转绝对路径）
+          if (link && !link.startsWith('http') && link !== '#') {
+            if (link.startsWith('/')) {
+              link = window.location.origin + link;
+            } else if (link.startsWith('./') || link.startsWith('../')) {
+              // 处理相对路径
+              const baseUrl = window.location.href.split('/').slice(0, -1).join('/');
+              try {
+                link = new URL(link, baseUrl + '/').href;
+              } catch (e) {
+                link = '#';
+              }
+            } else if (link) {
+              link = window.location.origin + '/' + link;
             }
           }
 
@@ -485,18 +511,31 @@ async function getBloggers() {
 function generateHTML(bloggers) {
   const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   
-  // 简单的 HTML 模板
+  // 转义HTML特殊字符
+  const escapeHtml = (text) => {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+  
+  // 美化 HTML 模板
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>海角监控站</title>
+<title>海角博主动态监控站</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>海角博主动态监控站</h1>
-<p style="text-align:center;color:#888">最后更新：${now}</p>
+<header>
+  <h1>🌊 海角博主动态监控站</h1>
+  <p class="update-time">最后更新：${now}</p>
+</header>
 <div class="container">`;
 
   let hasNew = false;
@@ -504,37 +543,64 @@ function generateHTML(bloggers) {
     const newCount = posts.filter(p => p.isToday).length;
     if (newCount > 0) hasNew = true;
     
-    // 只有当有帖子时才显示，或者你想显示空博主也可以
+    // 只有当有帖子时才显示
+    if (posts.length === 0) {
+      html += `<div class="card">
+        <div class="card-header">
+          <span class="name">${escapeHtml(nickname)}</span>
+        </div>
+        <div class="post-list">
+          <div class="empty">暂无获取到数据 (可能需要登录或反爬虫限制)</div>
+        </div>
+      </div>`;
+      return;
+    }
+    
     html += `<div class="card">
       <div class="card-header">
-        <span class="name">${nickname}</span>
-        ${newCount > 0 ? '<span class="badge">今日更新</span>' : ''}
+        <span class="name">${escapeHtml(nickname)}</span>
+        ${newCount > 0 ? '<span class="badge">✨ 今日更新</span>' : ''}
       </div>
       <div class="post-list">`;
 
-    if (posts.length === 0) {
-      html += `<div class="empty">暂无获取到数据 (可能需要登录或反爬虫限制)</div>`;
-    } else {
-      posts.forEach(p => {
-        const timeClass = p.isToday ? 'time new' : 'time';
-        // 显示第一张图作为预览
-        const imgHtml = p.images.length > 0 ? `<div class="thumb"><img src="${p.images[0]}" loading="lazy"></div>` : '';
-        
-        html += `
-        <a href="${p.link}" target="_blank" class="post-item">
+    posts.forEach(p => {
+      const timeClass = p.isToday ? 'time new' : 'time';
+      // 确保链接有效
+      let link = p.link && p.link !== '#' && p.link.trim() !== '' ? escapeHtml(p.link) : '#';
+      
+      // 处理图片 - 支持base64和普通URL
+      let imgHtml = '';
+      if (p.images && Array.isArray(p.images) && p.images.length > 0) {
+        const firstImg = p.images[0];
+        if (firstImg && firstImg.trim() !== '') {
+          // base64图片或普通URL都可以直接使用
+          // 注意：base64图片可能很长，需要确保完整输出
+          imgHtml = `<div class="thumb">
+            <img src="${escapeHtml(firstImg)}" alt="${escapeHtml(p.title)}" loading="lazy" onerror="this.style.display='none'; this.parentElement.style.display='none';">
+          </div>`;
+        }
+      }
+      
+      // 如果链接无效，添加提示
+      const linkAttr = link !== '#' ? `href="${link}" target="_blank"` : 'href="#" onclick="return false;" style="cursor: not-allowed;" title="链接不可用"';
+      
+      html += `
+        <a ${linkAttr} class="post-item">
           <div class="post-info">
-            <div class="title">${p.title}</div>
-            <div class="${timeClass}">${p.time}</div>
+            <div class="post-title">${escapeHtml(p.title)}</div>
+            <div class="${timeClass}">📅 ${escapeHtml(p.time || '未知时间')}</div>
           </div>
           ${imgHtml}
         </a>`;
-      });
-    }
+    });
+    
     html += `</div></div>`;
   });
 
   html += `</div>
-  <footer>Powered by Puppeteer | <a href="https://github.com/${process.env.GITHUB_REPOSITORY || ''}">Github Repo</a></footer>
+  <footer>
+    <p>Powered by Puppeteer | <a href="https://github.com/${process.env.GITHUB_REPOSITORY || ''}" target="_blank">Github Repo</a></p>
+  </footer>
   </body></html>`;
 
   fs.writeFileSync('index.html', html);
