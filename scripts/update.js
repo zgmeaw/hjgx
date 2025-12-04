@@ -6,18 +6,39 @@ const path = require('path');
 // 辅助函数：延迟
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function getBloggers() {
+// 获取博主链接列表（优先从环境变量，否则从文件）
+function getBloggerLinks() {
+  // 优先从环境变量读取（GitHub Secrets）
+  if (process.env.BLOGGER_LINKS) {
+    console.log('从环境变量 BLOGGER_LINKS 读取链接');
+    return process.env.BLOGGER_LINKS
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'));
+  }
+  
+  // 回退到 links.txt 文件
   const linksPath = path.join(__dirname, '../links.txt');
-  if (!fs.existsSync(linksPath)) {
-    console.log('links.txt not found!');
+  if (fs.existsSync(linksPath)) {
+    console.log('从 links.txt 文件读取链接');
+    return fs.readFileSync(linksPath, 'utf-8')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'));
+  }
+  
+  console.log('⚠️ 未找到链接配置（环境变量 BLOGGER_LINKS 或 links.txt 文件）');
+  return [];
+}
+
+async function getBloggers() {
+  // 获取链接列表
+  const urls = getBloggerLinks();
+  
+  if (urls.length === 0) {
+    console.log('没有配置任何博主链接');
     return [];
   }
-
-  // 读取链接
-  const urls = fs.readFileSync(linksPath, 'utf-8')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'));
 
   console.log(`计划抓取 ${urls.length} 个博主`);
 
