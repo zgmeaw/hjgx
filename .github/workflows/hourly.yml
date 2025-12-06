@@ -2,7 +2,9 @@ name: Hourly Update
 on:
   workflow_dispatch:      # 允许手动点击运行
   schedule:
-    - cron: '0 * * * *'   # 每小时运行一次
+    # 每两小时运行一次，排除晚上12点到早上8点（北京时间）
+    # 北京时间 8, 10, 12, 14, 16, 18, 20, 22 点 = UTC 0, 2, 4, 6, 8, 10, 12, 14 点
+    - cron: '0 0,2,4,6,8,10,12,14 * * *'   # 每两小时一次（排除晚上12点到早上8点）
 
 permissions:
   contents: write         # 赋予写权限以便提交代码
@@ -50,6 +52,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "action@github.com"
-          # 只提交 index.html，避免提交大量垃圾文件
+          # 提交 index.html 和 data 文件夹
           git add index.html
+          git add data/
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update $(date)" && git push)

@@ -23,6 +23,8 @@ jobs:
         env:
           QQ_MAIL: ${{ secrets.QQ_MAIL }}
           QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
+          # 邮件密码（必需，用于邮件内容加密）
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           # Google 搜索域名（必需，未设置时搜索按钮将不可用）
           GOOGLE_SEARCH_DOMAIN: ${{ secrets.GOOGLE_SEARCH_DOMAIN }}
         run: node scripts/send_email.js

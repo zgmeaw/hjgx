@@ -13,6 +13,18 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
+// 转义JavaScript字符串中的特殊字符
+function escapeJsString(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+}
+
 // 从主页链接中提取博主ID
 function extractBloggerId(url) {
   if (!url) return null;
@@ -40,6 +52,12 @@ function generateEmailHTML(bloggers) {
     minute: '2-digit',
     timeZone: 'Asia/Shanghai'
   });
+  
+  // 从环境变量读取密码，必须设置
+  const emailPassword = process.env.EMAIL_PASSWORD;
+  if (!emailPassword) {
+    throw new Error('❌ 必须设置环境变量 EMAIL_PASSWORD 作为邮件密码');
+  }
   
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -205,6 +223,52 @@ function generateEmailHTML(bloggers) {
     font-size: 12px;
     background: rgba(0, 0, 0, 0.02);
   }
+  .password-protection {
+    padding: 30px 20px;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.95);
+  }
+  .password-form {
+    max-width: 400px;
+    margin: 0 auto;
+  }
+  .password-input {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 16px;
+    border: 2px solid #667eea;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-family: inherit;
+  }
+  .password-btn {
+    width: 100%;
+    padding: 12px 24px;
+    font-size: 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+  }
+  .password-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+  .password-error {
+    color: #e53e3e;
+    margin-top: 12px;
+    font-size: 14px;
+    display: none;
+  }
+  .protected-content {
+    display: none;
+  }
+  .protected-content.unlocked {
+    display: block;
+  }
   @media (max-width: 600px) {
     .post-item {
       flex-direction: column;
@@ -221,6 +285,35 @@ function generateEmailHTML(bloggers) {
     }
   }
 </style>
+<script>
+  // 密码验证函数
+  function checkPassword() {
+    const password = document.getElementById('email-password').value;
+    // 密码从服务器端注入
+    const correctPassword = '${escapeJsString(emailPassword)}';
+    
+    if (password === correctPassword) {
+      document.getElementById('password-form').style.display = 'none';
+      document.getElementById('protected-content').classList.add('unlocked');
+      document.getElementById('password-error').style.display = 'none';
+    } else {
+      document.getElementById('password-error').style.display = 'block';
+      document.getElementById('email-password').value = '';
+    }
+  }
+  
+  // 支持回车键提交
+  document.addEventListener('DOMContentLoaded', function() {
+    const input = document.getElementById('email-password');
+    if (input) {
+      input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          checkPassword();
+        }
+      });
+    }
+  });
+</script>
 </head>
 <body>
 <div class="email-container">
@@ -228,6 +321,16 @@ function generateEmailHTML(bloggers) {
     <h1>🌊 动态监控站</h1>
     <p>最新动态 - ${now}</p>
   </div>
+  <div class="password-protection" id="password-form">
+    <div class="password-form">
+      <h2 style="margin-bottom: 20px; color: #2d3748;">🔒 内容已加密</h2>
+      <p style="margin-bottom: 20px; color: #718096;">请输入密码查看内容</p>
+      <input type="password" id="email-password" class="password-input" placeholder="请输入密码" autofocus>
+      <button onclick="checkPassword()" class="password-btn">解锁查看</button>
+      <div id="password-error" class="password-error">❌ 密码错误，请重试</div>
+    </div>
+  </div>
+  <div class="protected-content" id="protected-content">
   <div class="email-content">`;
 
   if (bloggers.length === 0) {
@@ -297,6 +400,7 @@ function generateEmailHTML(bloggers) {
   }
 
   html += `
+  </div>
   </div>
   <div class="email-footer">
     <p>2025 | 手动发送</p>

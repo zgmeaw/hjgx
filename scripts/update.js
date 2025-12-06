@@ -22,9 +22,9 @@ function getBloggerLinks() {
   if (fs.existsSync(linksPath)) {
     console.log('从 links.txt 文件读取链接');
     return fs.readFileSync(linksPath, 'utf-8')
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line && !line.startsWith('#'));
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#'));
   }
   
   console.log('⚠️ 未找到链接配置（环境变量 BLOGGER_LINKS 或 links.txt 文件）');
@@ -162,7 +162,7 @@ async function getBloggers() {
       
       if (!hasTitle) {
         console.log('⚠️ 未找到 .title 元素，等待更长时间...');
-        try {
+      try {
           // 最多等待 8 秒
           await Promise.race([
             page.waitForSelector('.title', { timeout: 8000 }),
@@ -174,7 +174,7 @@ async function getBloggers() {
           if (hasTitle) {
             console.log('✓ 找到 .title 选择器');
           }
-        } catch (e) {
+      } catch (e) {
           console.log('⚠️ 等待超时，继续尝试提取数据...');
         }
       } else {
@@ -198,7 +198,7 @@ async function getBloggers() {
       });
       console.log('页面信息:', pageInfo);
       console.log('开始执行数据提取（最多等待30秒）...');
-      
+
       // 简化提取逻辑，避免超时
       console.log('开始快速提取数据...');
       const posts = await page.evaluate(() => {
@@ -209,7 +209,7 @@ async function getBloggers() {
         for (let idx = 0; idx < Math.min(items.length, 3); idx++) {
           try {
             const item = items[idx];
-            
+
             // --- 标题 ---
             const title = item.innerText.trim() || item.getAttribute('title') || '';
             if (!title) continue;
@@ -228,21 +228,21 @@ async function getBloggers() {
             }
             if (!container) container = item.parentElement;
 
-            // --- 时间 ---
+          // --- 时间 ---
             let rawTime = '';
             if (container) {
               const timeEl = container.querySelector('.createTime');
               if (timeEl) rawTime = timeEl.innerText.trim();
             }
-            
+          
             // --- 图片：从帖子正文中查找第一个img标签（广泛搜索）---
             let imgSrc = '';
-            
+
             // 方法1: 从 .attachments 中查找
             if (container) {
               const attachEl = container.querySelector('.attachments');
-              if (attachEl) {
-                const imgs = attachEl.querySelectorAll('img');
+          if (attachEl) {
+             const imgs = attachEl.querySelectorAll('img');
                 for (const img of imgs) {
                   imgSrc = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '';
                   if (imgSrc) break;
@@ -332,7 +332,7 @@ async function getBloggers() {
                 if (imgSrc) break;
                 sibling = sibling.nextElementSibling;
                 checkCount++;
-              }
+          }
             }
             
             // 处理图片链接（base64直接使用，其他补全）
@@ -536,8 +536,8 @@ function generateHTML(bloggers) {
       </div>
       <div class="post-list">`;
 
-    posts.forEach(p => {
-      const timeClass = p.isToday ? 'time new' : 'time';
+      posts.forEach(p => {
+        const timeClass = p.isToday ? 'time new' : 'time';
       
       // 处理图片 - 支持base64和普通URL
       let imgHtml = '';
@@ -559,7 +559,7 @@ function generateHTML(bloggers) {
       }
       
       // 帖子项不再需要链接，只显示信息
-      html += `
+        html += `
         <div class="post-item">
           <div class="post-info">
             <div class="post-title">${escapeHtml(p.title)}</div>
@@ -567,7 +567,7 @@ function generateHTML(bloggers) {
           </div>
           ${imgHtml}
         </div>`;
-    });
+      });
     
     html += `</div></div>`;
   });
@@ -635,7 +635,7 @@ async function main() {
 
 // 如果直接运行此文件，执行主函数
 if (require.main === module) {
-  main().catch(console.error);
+main().catch(console.error);
 }
 
 // 导出函数供其他脚本使用

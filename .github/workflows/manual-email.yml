@@ -26,6 +26,8 @@ jobs:
         env:
           QQ_MAIL: ${{ secrets.QQ_MAIL }}
           QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
+          # 邮件密码（必需，用于邮件内容加密）
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
           # 从 GitHub Secrets 读取博主链接（每行一个链接）
           BLOGGER_LINKS: ${{ secrets.BLOGGER_LINKS }}
