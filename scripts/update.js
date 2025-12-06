@@ -582,7 +582,46 @@ function generateHTML(bloggers) {
   console.log('HTML 生成完毕');
 }
 
-// 保存当天有更新的博主数据
+// 保存B记录：所有博主的最新3条帖子（用于手动发送和对比更新）
+function saveBloggersLatest(bloggers) {
+  const latestFile = path.join(__dirname, '../data/bloggers_latest.json');
+  const dataDir = path.join(__dirname, '../data');
+  
+  // 确保 data 目录存在
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  
+  // 读取现有的B记录（如果存在）
+  let existingLatest = {};
+  if (fs.existsSync(latestFile)) {
+    try {
+      const data = fs.readFileSync(latestFile, 'utf-8');
+      existingLatest = JSON.parse(data);
+    } catch (e) {
+      console.log('⚠️ 读取现有B记录失败，将创建新记录');
+    }
+  }
+  
+  // 保存所有博主的最新3条帖子
+  const latestData = bloggers.map(blogger => ({
+    nickname: blogger.nickname,
+    homepageUrl: blogger.homepageUrl,
+    posts: blogger.posts.slice(0, 3).map(p => ({
+      title: p.title,
+      time: p.time,
+      isToday: p.isToday,
+      images: p.images
+    }))
+  }));
+  
+  fs.writeFileSync(latestFile, JSON.stringify(latestData, null, 2), 'utf-8');
+  console.log(`✓ 已保存 ${latestData.length} 个博主的最新帖子到 ${latestFile}`);
+  
+  return latestData;
+}
+
+// 保存A记录：当天有更新的博主数据（用于定时发送）
 function saveDailyUpdates(bloggers) {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const dailyFile = path.join(__dirname, `../data/daily_${today}.json`);
@@ -593,7 +632,7 @@ function saveDailyUpdates(bloggers) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   
-  // 筛选出当天有更新的博主
+  // 筛选出当天有更新的博主，只保存当天的帖子
   const todayUpdates = bloggers
     .filter(blogger => {
       const hasTodayPosts = blogger.posts.some(p => p.isToday);
@@ -602,12 +641,14 @@ function saveDailyUpdates(bloggers) {
     .map(blogger => ({
       nickname: blogger.nickname,
       homepageUrl: blogger.homepageUrl,
-      posts: blogger.posts.map(p => ({
-        title: p.title,
-        time: p.time,
-        isToday: p.isToday,
-        images: p.images
-      }))
+      posts: blogger.posts
+        .filter(p => p.isToday) // 只保存当天的帖子
+        .map(p => ({
+          title: p.title,
+          time: p.time,
+          isToday: p.isToday,
+          images: p.images
+        }))
     }));
   
   // 保存到文件
@@ -630,6 +671,9 @@ function saveDailyUpdates(bloggers) {
 async function main() {
   const bloggers = await getBloggers();
   generateHTML(bloggers);
+  // 保存B记录（所有博主最新3条帖子）
+  saveBloggersLatest(bloggers);
+  // 保存A记录（当天更新的帖子）
   saveDailyUpdates(bloggers);
 }
 
@@ -639,4 +683,4 @@ main().catch(console.error);
 }
 
 // 导出函数供其他脚本使用
-module.exports = { getBloggers, generateHTML, saveDailyUpdates };
+module.exports = { getBloggers, generateHTML, saveDailyUpdates, saveBloggersLatest };

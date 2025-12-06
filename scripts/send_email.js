@@ -263,10 +263,29 @@ function generateEmailHTML(bloggers) {
     display: none;
   }
   .protected-content {
-    display: none;
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
   }
-  .protected-content.unlocked {
-    display: block;
+  /* 使用 :target 伪类实现密码保护（纯CSS方案，兼容性更好） */
+  #unlock:target ~ .password-protection {
+    display: none !important;
+  }
+  #unlock:target ~ .protected-content {
+    display: block !important;
+    visibility: visible !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  /* 隐藏解锁锚点 */
+  #unlock {
+    position: absolute;
+    left: -9999px;
+    visibility: hidden;
+    opacity: 0;
+    width: 0;
+    height: 0;
   }
   @media (max-width: 600px) {
     .post-item {
@@ -284,35 +303,6 @@ function generateEmailHTML(bloggers) {
     }
   }
 </style>
-<script>
-  // 密码验证函数
-  function checkPassword() {
-    const password = document.getElementById('email-password').value;
-    // 密码从服务器端注入
-    const correctPassword = '${escapeJsString(emailPassword)}';
-    
-    if (password === correctPassword) {
-      document.getElementById('password-form').style.display = 'none';
-      document.getElementById('protected-content').classList.add('unlocked');
-      document.getElementById('password-error').style.display = 'none';
-    } else {
-      document.getElementById('password-error').style.display = 'block';
-      document.getElementById('email-password').value = '';
-    }
-  }
-  
-  // 支持回车键提交
-  document.addEventListener('DOMContentLoaded', function() {
-    const input = document.getElementById('email-password');
-    if (input) {
-      input.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-          checkPassword();
-        }
-      });
-    }
-  });
-</script>
 </head>
 <body>
 <div class="email-container">
@@ -320,13 +310,19 @@ function generateEmailHTML(bloggers) {
     <h1>🌊 动态监控日报</h1>
     <p>${today} 更新汇总</p>
   </div>
+  <!-- 隐藏的解锁锚点 -->
+  <a id="unlock" href="#unlock"></a>
   <div class="password-protection" id="password-form">
     <div class="password-form">
       <h2 style="margin-bottom: 20px; color: #2d3748;">🔒 内容已加密</h2>
-      <p style="margin-bottom: 20px; color: #718096;">请输入密码查看内容</p>
-      <input type="password" id="email-password" class="password-input" placeholder="请输入密码" autofocus>
-      <button onclick="checkPassword()" class="password-btn">解锁查看</button>
-      <div id="password-error" class="password-error">❌ 密码错误，请重试</div>
+      <p style="margin-bottom: 20px; color: #718096;">此邮件内容已加密保护</p>
+      <div style="margin-bottom: 20px; padding: 15px; background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <p style="margin: 0; color: #2d3748; font-weight: 600; margin-bottom: 8px;">查看密码：</p>
+        <p style="margin: 0; color: #667eea; font-size: 18px; font-weight: 700; letter-spacing: 2px; word-break: break-all;">${escapeHtml(emailPassword)}</p>
+      </div>
+      <p style="margin-bottom: 20px; color: #718096; font-size: 14px;">请点击下方按钮解锁查看内容</p>
+      <a href="#unlock" style="display: inline-block; width: 100%; padding: 12px 24px; font-size: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 600; box-sizing: border-box;">🔓 点击解锁查看内容</a>
+      <p style="margin-top: 20px; color: #718096; font-size: 12px; line-height: 1.6;">提示：<br>• 如果点击按钮后内容仍未显示，请尝试在浏览器中打开此邮件<br>• 某些邮件客户端可能不支持此功能，建议使用网页版邮箱查看</p>
     </div>
   </div>
   <div class="protected-content" id="protected-content">
