@@ -36,6 +36,10 @@ jobs:
           BLOGGER_LINKS: ${{ secrets.BLOGGER_LINKS }}
           # Google 搜索域名（必需，未设置时搜索按钮将不可用）
           GOOGLE_SEARCH_DOMAIN: ${{ secrets.GOOGLE_SEARCH_DOMAIN }}
+          # 数据加密密钥（必需，用于加密A、B记录）
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+          # 网页密码（必需，用于网页访问保护）
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
 
       # 如果脚本生成了 debug 图片，上传以便查看
       - name: Upload Debug Artifacts

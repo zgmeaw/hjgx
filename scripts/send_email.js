@@ -14,49 +14,15 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
-// 转义JavaScript字符串中的特殊字符
-function escapeJsString(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t');
-}
 
-// 从主页链接中提取博主ID
-function extractBloggerId(url) {
-  if (!url) return null;
-  // 匹配链接末尾的数字
-  const match = url.match(/\/(\d+)(?:\?|$)/);
-  return match ? match[1] : null;
-}
-
-// 生成Google搜索链接
-function generateGoogleSearchUrl(bloggerId) {
-  if (!bloggerId) return '#';
-  // 从环境变量读取搜索域名，如果没有设置则返回 #
-  const searchDomain = process.env.GOOGLE_SEARCH_DOMAIN;
-  if (!searchDomain) return '#';
-  return `https://www.google.com/search?q=${bloggerId}&q=site%3A${encodeURIComponent(searchDomain)}`;
-}
-
-// 生成邮件HTML内容（类似网页效果）
-function generateEmailHTML(bloggers) {
+// 生成邮件HTML内容（简化版：只显示数量）
+function generateEmailHTML(postCount) {
   const today = new Date().toLocaleDateString('zh-CN', { 
     year: 'numeric', 
     month: 'long', 
     day: 'numeric',
     timeZone: 'Asia/Shanghai'
   });
-  
-  // 从环境变量读取密码，必须设置
-  const emailPassword = process.env.EMAIL_PASSWORD;
-  if (!emailPassword) {
-    throw new Error('❌ 必须设置环境变量 EMAIL_PASSWORD 作为邮件密码');
-  }
   
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -65,21 +31,16 @@ function generateEmailHTML(bloggers) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>动态监控日报</title>
 <style>
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     padding: 20px;
-    line-height: 1.6;
+    margin: 0;
   }
   .email-container {
-    max-width: 800px;
+    max-width: 600px;
     margin: 0 auto;
-    background: rgba(255, 255, 255, 0.95);
+    background: white;
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
@@ -87,310 +48,54 @@ function generateEmailHTML(bloggers) {
   .email-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
-    padding: 30px 20px;
+    padding: 40px 20px;
     text-align: center;
   }
   .email-header h1 {
-    font-size: 24px;
+    font-size: 28px;
     margin-bottom: 10px;
     font-weight: 800;
   }
-  .email-header p {
-    font-size: 14px;
-    opacity: 0.9;
-  }
   .email-content {
-    padding: 30px 20px;
+    padding: 40px 20px;
+    text-align: center;
   }
-  .card {
-    background: rgba(255, 255, 255, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 12px;
-    margin-bottom: 24px;
-    overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  .count-number {
+    font-size: 48px;
+    font-weight: 800;
+    color: #667eea;
+    margin: 20px 0;
   }
-  .card-header {
-    padding: 20px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-    background: rgba(255, 255, 255, 0.5);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .name-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .name {
-    font-weight: 700;
+  .count-text {
     font-size: 18px;
     color: #2d3748;
+    margin-bottom: 10px;
   }
-  .name::before {
-    content: "👤";
-    margin-right: 8px;
-  }
-  .homepage-link,
-  .search-link {
-    display: inline-block;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: rgba(102, 126, 234, 0.2);
-    border: 1px solid rgba(102, 126, 234, 0.3);
-    text-align: center;
-    line-height: 32px;
-    text-decoration: none;
-    color: #667eea;
-    font-size: 16px;
-    transition: all 0.3s;
-  }
-  .homepage-link:hover {
-    background: rgba(102, 126, 234, 0.3);
-    transform: scale(1.1);
-  }
-  .search-link {
-    background: rgba(66, 133, 244, 0.2);
-    border: 1px solid rgba(66, 133, 244, 0.3);
-    color: #4285f4;
-  }
-  .search-link:hover {
-    background: rgba(66, 133, 244, 0.3);
-    transform: scale(1.1);
-  }
-  .badge {
-    background: linear-gradient(135deg, #ff6b9d 0%, #ff8fb3 100%);
-    color: #fff;
-    font-size: 12px;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-weight: 700;
-  }
-  .post-list {
-    padding: 0;
-  }
-  .post-item {
-    display: flex;
-    align-items: center;
-    padding: 20px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  }
-  .post-item:last-child {
-    border-bottom: none;
-  }
-  .post-info {
-    flex: 1;
-    min-width: 0;
-    margin-right: 16px;
-  }
-  .post-title {
-    font-size: 16px;
-    color: #2d3748;
-    font-weight: 600;
-    margin-bottom: 8px;
-    line-height: 1.5;
-  }
-  .time {
-    font-size: 13px;
+  .date-text {
+    font-size: 14px;
     color: #718096;
-  }
-  .time.new {
-    color: #ff6b9d;
-    font-weight: 700;
-  }
-  .thumb {
-    flex-shrink: 0;
-    width: 100px;
-    height: 100px;
-    border-radius: 8px;
-    overflow: hidden;
-    background: #f7fafc;
-    border: 2px solid rgba(0, 0, 0, 0.05);
-  }
-  .thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
+    margin-top: 20px;
   }
   .email-footer {
     text-align: center;
     padding: 20px;
     color: #718096;
     font-size: 12px;
-    background: rgba(0, 0, 0, 0.02);
-  }
-  .password-protection {
-    padding: 30px 20px;
-    text-align: center;
-    background: rgba(255, 255, 255, 0.95);
-  }
-  .password-form {
-    max-width: 400px;
-    margin: 0 auto;
-  }
-  .password-input {
-    width: 100%;
-    padding: 12px 16px;
-    font-size: 16px;
-    border: 2px solid #667eea;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    font-family: inherit;
-  }
-  .password-btn {
-    width: 100%;
-    padding: 12px 24px;
-    font-size: 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s;
-  }
-  .password-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  }
-  .password-error {
-    color: #e53e3e;
-    margin-top: 12px;
-    font-size: 14px;
-    display: none;
-  }
-  .protected-content {
-    display: none !important;
-    visibility: hidden !important;
-    height: 0 !important;
-    overflow: hidden !important;
-  }
-  /* 使用 :target 伪类实现密码保护（纯CSS方案，兼容性更好） */
-  #unlock:target ~ .password-protection {
-    display: none !important;
-  }
-  #unlock:target ~ .protected-content {
-    display: block !important;
-    visibility: visible !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-  /* 隐藏解锁锚点 */
-  #unlock {
-    position: absolute;
-    left: -9999px;
-    visibility: hidden;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  @media (max-width: 600px) {
-    .post-item {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .post-info {
-      margin-right: 0;
-      margin-bottom: 12px;
-      width: 100%;
-    }
-    .thumb {
-      width: 100%;
-      height: 200px;
-    }
+    background: #f7fafc;
   }
 </style>
 </head>
 <body>
 <div class="email-container">
   <div class="email-header">
-    <h1>🌊 动态监控日报</h1>
-    <p>${today} 更新汇总</p>
+    <h1>🌊 动态监控站</h1>
+    <p>${today}</p>
   </div>
-  <!-- 隐藏的解锁锚点 -->
-  <a id="unlock" href="#unlock"></a>
-  <div class="password-protection" id="password-form">
-    <div class="password-form">
-      <h2 style="margin-bottom: 20px; color: #2d3748;">🔒 内容已加密</h2>
-      <p style="margin-bottom: 20px; color: #718096;">此邮件内容已加密保护</p>
-      <div style="margin-bottom: 20px; padding: 15px; background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
-        <p style="margin: 0; color: #2d3748; font-weight: 600; margin-bottom: 8px;">查看密码：</p>
-        <p style="margin: 0; color: #667eea; font-size: 18px; font-weight: 700; letter-spacing: 2px; word-break: break-all;">${escapeHtml(emailPassword)}</p>
-      </div>
-      <p style="margin-bottom: 20px; color: #718096; font-size: 14px;">请点击下方按钮解锁查看内容</p>
-      <a href="#unlock" style="display: inline-block; width: 100%; padding: 12px 24px; font-size: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 600; box-sizing: border-box;">🔓 点击解锁查看内容</a>
-      <p style="margin-top: 20px; color: #718096; font-size: 12px; line-height: 1.6;">提示：<br>• 如果点击按钮后内容仍未显示，请尝试在浏览器中打开此邮件<br>• 某些邮件客户端可能不支持此功能，建议使用网页版邮箱查看</p>
-    </div>
-  </div>
-  <div class="protected-content" id="protected-content">
-  <div class="email-content">`;
-
-  if (bloggers.length === 0) {
-    html += `
-    <div class="card">
-      <div style="padding: 40px; text-align: center; color: #718096;">
-        <p style="font-size: 16px;">今日暂无更新</p>
-      </div>
-    </div>`;
-  } else {
-    bloggers.forEach((blogger) => {
-      const { nickname, posts, homepageUrl } = blogger;
-      const newCount = posts.filter(p => p.isToday).length;
-      const bloggerId = extractBloggerId(homepageUrl);
-      const googleSearchUrl = generateGoogleSearchUrl(bloggerId);
-      
-      html += `<div class="card">
-        <div class="card-header">
-          <div class="name-wrapper">
-            <span class="name">${escapeHtml(nickname)}</span>
-            <a href="${escapeHtml(homepageUrl || '#')}" target="_blank" class="homepage-link" title="访问博主主页">
-              ↗
-            </a>
-            <a href="${escapeHtml(googleSearchUrl)}" target="_blank" class="search-link" title="Google搜索">
-              🔍
-            </a>
-          </div>
-          ${newCount > 0 ? '<span class="badge">✨ 今日更新</span>' : ''}
-        </div>
-        <div class="post-list">`;
-
-      posts.forEach(p => {
-        const timeClass = p.isToday ? 'time new' : 'time';
-        
-        // 处理图片
-        let imgHtml = '';
-        if (p.images && Array.isArray(p.images) && p.images.length > 0) {
-          const firstImg = p.images[0];
-          if (firstImg && firstImg.trim() !== '') {
-            let imgSrc = firstImg;
-            if (!imgSrc.startsWith('data:image')) {
-              imgSrc = imgSrc.replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-            }
-            imgHtml = `<div class="thumb">
-              <img src="${imgSrc}" alt="${escapeHtml(p.title)}">
-            </div>`;
-          }
-        }
-        
-        html += `
-          <div class="post-item">
-            <div class="post-info">
-              <div class="post-title">${escapeHtml(p.title)}</div>
-              <div class="${timeClass}">📅 ${escapeHtml(p.time || '未知时间')}</div>
-            </div>
-            ${imgHtml}
-          </div>`;
-      });
-      
-      html += `</div></div>`;
-    });
-  }
-
-  html += `
-  </div>
+  <div class="email-content">
+    <div class="count-text">今日有</div>
+    <div class="count-number">${postCount}</div>
+    <div class="count-text">条新内容</div>
+    <div class="date-text">请访问网站查看详情</div>
   </div>
   <div class="email-footer">
     <p>2025 | 自动发送</p>
@@ -402,43 +107,70 @@ function generateEmailHTML(bloggers) {
   return html;
 }
 
+// 解密函数
+function decryptData(encryptedData, key) {
+  const crypto = require('crypto');
+  try {
+    const parts = encryptedData.split(':');
+    if (parts.length !== 2) {
+      throw new Error('Invalid encrypted data format');
+    }
+    const iv = Buffer.from(parts[0], 'hex');
+    const encrypted = Buffer.from(parts[1], 'hex');
+    const keyHash = crypto.createHash('sha256').update(key).digest();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', keyHash, iv);
+    let decrypted = decipher.update(encrypted);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    return JSON.parse(decrypted.toString());
+  } catch (e) {
+    throw new Error(`解密失败: ${e.message}`);
+  }
+}
+
 // 发送邮件
 async function sendEmail() {
   const sender = process.env.QQ_MAIL;
   const authCode = process.env.QQ_AUTH_CODE;
+  const encryptKey = process.env.DATA_ENCRYPT_KEY;
   
   if (!sender || !authCode) {
     console.error('❌ 缺少环境变量: QQ_MAIL 或 QQ_AUTH_CODE');
     process.exit(1);
   }
   
-  // 读取今天的更新数据
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const dailyFile = path.join(__dirname, `../data/daily_${today}.json`);
+  if (!encryptKey) {
+    console.error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于解密数据');
+    process.exit(1);
+  }
   
-  let bloggers = [];
-  if (fs.existsSync(dailyFile)) {
+  // 读取B记录（加密的）
+  const latestFile = path.join(__dirname, '../data/bloggers_latest.enc');
+  
+  let postCount = 0;
+  if (fs.existsSync(latestFile)) {
     try {
-      const data = fs.readFileSync(dailyFile, 'utf-8');
-      bloggers = JSON.parse(data);
-      console.log(`✓ 读取到 ${bloggers.length} 个博主的今日更新`);
+      const encryptedData = fs.readFileSync(latestFile, 'utf-8');
+      const bloggers = decryptData(encryptedData, encryptKey);
+      // 统计所有帖子数量
+      postCount = bloggers.reduce((sum, blogger) => sum + (blogger.posts ? blogger.posts.length : 0), 0);
+      console.log(`✓ 读取到B记录，共 ${postCount} 条帖子`);
     } catch (e) {
-      console.error(`❌ 读取文件失败: ${e.message}`);
+      console.error(`❌ 读取B记录失败: ${e.message}`);
       process.exit(1);
     }
   } else {
-    console.log('ℹ️ 今日无更新数据，不发送邮件');
+    console.log('ℹ️ B记录文件不存在，不发送邮件');
     return;
   }
   
-  // 如果没有更新，不发送
-  if (bloggers.length === 0) {
-    console.log('ℹ️ 今日无更新，不发送邮件');
+  // 如果没有内容，不发送
+  if (postCount === 0) {
+    console.log('ℹ️ 今日无新内容，不发送邮件');
     return;
   }
   
   // 生成邮件内容
-  const html = generateEmailHTML(bloggers);
+  const html = generateEmailHTML(postCount);
   
   // 创建邮件传输器
   const transporter = nodemailer.createTransport({

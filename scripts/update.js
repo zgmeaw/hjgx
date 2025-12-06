@@ -2,6 +2,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // 辅助函数：延迟
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -430,6 +431,12 @@ async function getBloggers() {
 function generateHTML(bloggers) {
   const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   
+  // 从环境变量读取网页密码
+  const pagePassword = process.env.EMAIL_PASSWORD;
+  if (!pagePassword) {
+    throw new Error('❌ 必须设置环境变量 EMAIL_PASSWORD 用于网页密码保护');
+  }
+  
   // 转义HTML特殊字符
   const escapeHtml = (text) => {
     if (!text) return '';
@@ -439,6 +446,18 @@ function generateHTML(bloggers) {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  };
+  
+  // 转义JavaScript字符串中的特殊字符
+  const escapeJsString = (text) => {
+    if (!text) return '';
+    return String(text)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
   };
   
   // 从主页链接中提取博主ID
@@ -458,7 +477,7 @@ function generateHTML(bloggers) {
     return `https://www.google.com/search?q=${bloggerId}&q=site%3A${encodeURIComponent(searchDomain)}`;
   };
   
-  // 美化 HTML 模板
+  // 美化 HTML 模板（带密码保护）
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -466,8 +485,127 @@ function generateHTML(bloggers) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>动态监控站</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  .password-lock {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  }
+  .password-form {
+    background: white;
+    padding: 40px;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+  }
+  .password-form h2 {
+    margin-bottom: 20px;
+    color: #2d3748;
+    font-size: 24px;
+  }
+  .password-form p {
+    margin-bottom: 20px;
+    color: #718096;
+  }
+  .password-input {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 16px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+    font-family: inherit;
+  }
+  .password-input:focus {
+    outline: none;
+    border-color: #667eea;
+  }
+  .password-btn {
+    width: 100%;
+    padding: 12px 24px;
+    font-size: 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+  }
+  .password-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+  .password-error {
+    color: #e53e3e;
+    margin-top: 12px;
+    font-size: 14px;
+    display: none;
+  }
+  .main-content {
+    display: none;
+  }
+  .main-content.unlocked {
+    display: block;
+  }
+</style>
+<script>
+  function checkPassword() {
+    const password = document.getElementById('page-password').value;
+    const correctPassword = '${escapeJsString(pagePassword)}';
+    
+    if (password === correctPassword) {
+      document.getElementById('password-lock').style.display = 'none';
+      document.getElementById('main-content').classList.add('unlocked');
+      // 保存到sessionStorage，刷新页面后仍然解锁
+      sessionStorage.setItem('pageUnlocked', 'true');
+    } else {
+      document.getElementById('password-error').style.display = 'block';
+      document.getElementById('page-password').value = '';
+    }
+  }
+  
+  // 页面加载时检查是否已解锁
+  window.addEventListener('DOMContentLoaded', function() {
+    if (sessionStorage.getItem('pageUnlocked') === 'true') {
+      document.getElementById('password-lock').style.display = 'none';
+      document.getElementById('main-content').classList.add('unlocked');
+    }
+    
+    // 支持回车键提交
+    const input = document.getElementById('page-password');
+    if (input) {
+      input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          checkPassword();
+        }
+      });
+      input.focus();
+    }
+  });
+</script>
 </head>
 <body>
+<div class="password-lock" id="password-lock">
+  <div class="password-form">
+    <h2>🔒 网站已加密</h2>
+    <p>请输入密码访问</p>
+    <input type="password" id="page-password" class="password-input" placeholder="请输入密码" autofocus>
+    <button onclick="checkPassword()" class="password-btn">解锁访问</button>
+    <div id="password-error" class="password-error">❌ 密码错误，请重试</div>
+  </div>
+</div>
+<div class="main-content" id="main-content">
 <header>
   <h1>🌊 动态监控站</h1>
   <p class="update-time">最后更新：${now}</p>
@@ -576,28 +714,59 @@ function generateHTML(bloggers) {
   <footer>
     <p>2025</a></p>
   </footer>
-  </body></html>`;
+</div>
+</body></html>`;
 
   fs.writeFileSync('index.html', html);
   console.log('HTML 生成完毕');
 }
 
-// 保存B记录：所有博主的最新3条帖子（用于手动发送和对比更新）
+// 加密函数
+function encryptData(data, key) {
+  const keyHash = crypto.createHash('sha256').update(key).digest();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
+  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+// 解密函数
+function decryptData(encryptedData, key) {
+  const parts = encryptedData.split(':');
+  if (parts.length !== 2) {
+    throw new Error('Invalid encrypted data format');
+  }
+  const iv = Buffer.from(parts[0], 'hex');
+  const encrypted = Buffer.from(parts[1], 'hex');
+  const keyHash = crypto.createHash('sha256').update(key).digest();
+  const decipher = crypto.createDecipheriv('aes-256-cbc', keyHash, iv);
+  let decrypted = decipher.update(encrypted);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return JSON.parse(decrypted.toString());
+}
+
+// 保存B记录：所有博主的最新3条帖子（用于手动发送和对比更新，加密保存）
 function saveBloggersLatest(bloggers) {
-  const latestFile = path.join(__dirname, '../data/bloggers_latest.json');
+  const latestFile = path.join(__dirname, '../data/bloggers_latest.enc');
   const dataDir = path.join(__dirname, '../data');
+  const encryptKey = process.env.DATA_ENCRYPT_KEY;
+  
+  if (!encryptKey) {
+    throw new Error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于数据加密');
+  }
   
   // 确保 data 目录存在
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   
-  // 读取现有的B记录（如果存在）
-  let existingLatest = {};
+  // 读取现有的B记录（如果存在，用于对比）
+  let existingLatest = [];
   if (fs.existsSync(latestFile)) {
     try {
-      const data = fs.readFileSync(latestFile, 'utf-8');
-      existingLatest = JSON.parse(data);
+      const encryptedData = fs.readFileSync(latestFile, 'utf-8');
+      existingLatest = decryptData(encryptedData, encryptKey);
     } catch (e) {
       console.log('⚠️ 读取现有B记录失败，将创建新记录');
     }
@@ -615,17 +784,24 @@ function saveBloggersLatest(bloggers) {
     }))
   }));
   
-  fs.writeFileSync(latestFile, JSON.stringify(latestData, null, 2), 'utf-8');
-  console.log(`✓ 已保存 ${latestData.length} 个博主的最新帖子到 ${latestFile}`);
+  // 加密保存
+  const encrypted = encryptData(latestData, encryptKey);
+  fs.writeFileSync(latestFile, encrypted, 'utf-8');
+  console.log(`✓ 已加密保存 ${latestData.length} 个博主的最新帖子到 ${latestFile}`);
   
   return latestData;
 }
 
-// 保存A记录：当天有更新的博主数据（用于定时发送）
+// 保存A记录：当天有更新的博主数据（用于定时发送，加密保存）
 function saveDailyUpdates(bloggers) {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const dailyFile = path.join(__dirname, `../data/daily_${today}.json`);
+  const dailyFile = path.join(__dirname, `../data/daily_${today}.enc`);
   const dataDir = path.join(__dirname, '../data');
+  const encryptKey = process.env.DATA_ENCRYPT_KEY;
+  
+  if (!encryptKey) {
+    throw new Error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于数据加密');
+  }
   
   // 确保 data 目录存在
   if (!fs.existsSync(dataDir)) {
@@ -651,10 +827,11 @@ function saveDailyUpdates(bloggers) {
         }))
     }));
   
-  // 保存到文件
+  // 保存到文件（加密）
   if (todayUpdates.length > 0) {
-    fs.writeFileSync(dailyFile, JSON.stringify(todayUpdates, null, 2), 'utf-8');
-    console.log(`✓ 已保存 ${todayUpdates.length} 个博主的今日更新到 ${dailyFile}`);
+    const encrypted = encryptData(todayUpdates, encryptKey);
+    fs.writeFileSync(dailyFile, encrypted, 'utf-8');
+    console.log(`✓ 已加密保存 ${todayUpdates.length} 个博主的今日更新到 ${dailyFile}`);
   } else {
     // 如果没有更新，删除当天的文件（如果存在）
     if (fs.existsSync(dailyFile)) {
