@@ -143,23 +143,24 @@ async function sendEmail() {
     process.exit(1);
   }
   
-  // 读取B记录（加密的）
-  const latestFile = path.join(__dirname, '../data/bloggers_latest.enc');
+  // 读取A记录（当天更新的帖子，加密的）
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const dailyFile = path.join(__dirname, `../data/daily_${today}.enc`);
   
   let postCount = 0;
-  if (fs.existsSync(latestFile)) {
+  if (fs.existsSync(dailyFile)) {
     try {
-      const encryptedData = fs.readFileSync(latestFile, 'utf-8');
+      const encryptedData = fs.readFileSync(dailyFile, 'utf-8');
       const bloggers = decryptData(encryptedData, encryptKey);
-      // 统计所有帖子数量
+      // 统计当天更新的所有帖子数量
       postCount = bloggers.reduce((sum, blogger) => sum + (blogger.posts ? blogger.posts.length : 0), 0);
-      console.log(`✓ 读取到B记录，共 ${postCount} 条帖子`);
+      console.log(`✓ 读取到A记录，共 ${postCount} 条今日更新的帖子`);
     } catch (e) {
-      console.error(`❌ 读取B记录失败: ${e.message}`);
+      console.error(`❌ 读取A记录失败: ${e.message}`);
       process.exit(1);
     }
   } else {
-    console.log('ℹ️ B记录文件不存在，不发送邮件');
+    console.log('ℹ️ 今日无更新数据，不发送邮件');
     return;
   }
   
@@ -184,10 +185,17 @@ async function sendEmail() {
   });
   
   // 邮件选项
+  const todayStr = new Date().toLocaleDateString('zh-CN', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric',
+    timeZone: 'Asia/Shanghai'
+  });
+  
   const mailOptions = {
     from: `"动态监控站" <${sender}>`,
     to: sender, // 发给自己
-    subject: `动态监控日报 - ${today}`,
+    subject: `动态监控日报 - ${todayStr}`,
     html: html
   };
   

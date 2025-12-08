@@ -203,7 +203,7 @@ async function getBloggers() {
       // 简化提取逻辑，避免超时
       console.log('开始快速提取数据...');
       const posts = await page.evaluate(() => {
-        const todayStr = new Date().toISOString().slice(5, 10); // "12-03"
+        const now = new Date();
         const items = document.querySelectorAll('.title');
         const results = [];
 
@@ -234,6 +234,23 @@ async function getBloggers() {
             if (container) {
               const timeEl = container.querySelector('.createTime');
               if (timeEl) rawTime = timeEl.innerText.trim();
+            }
+            
+            // 判断是否是今天的帖子（从 "12-05" 格式中提取日期并与今天对比）
+            let isToday = false;
+            if (rawTime) {
+              // 从时间字符串中提取 MM-DD 格式的日期（如 "12-05"）
+              // 匹配格式：MM-DD 或 MM/DD（可能后面还有时间，如 "12-05 10:30"）
+              const dateMatch = rawTime.match(/(\d{1,2})[-\/](\d{1,2})/);
+              if (dateMatch) {
+                const postMonth = parseInt(dateMatch[1]);
+                const postDay = parseInt(dateMatch[2]);
+                const todayMonth = now.getMonth() + 1; // getMonth() 返回 0-11
+                const todayDay = now.getDate();
+                
+                // 直接比较月份和日期
+                isToday = (postMonth === todayMonth && postDay === todayDay);
+              }
             }
           
             // --- 图片：从帖子正文中查找第一个img标签（广泛搜索）---
@@ -364,7 +381,7 @@ async function getBloggers() {
             results.push({
               title,
               time: rawTime || '未知时间',
-              isToday: rawTime.includes(todayStr),
+              isToday: isToday,
               images: imgSrc ? [imgSrc] : []
             });
           } catch (e) {
@@ -715,7 +732,7 @@ function generateHTML(bloggers) {
     <p>2025</a></p>
   </footer>
 </div>
-</body></html>`;
+  </body></html>`;
 
   fs.writeFileSync('index.html', html);
   console.log('HTML 生成完毕');
@@ -820,11 +837,11 @@ function saveDailyUpdates(bloggers) {
       posts: blogger.posts
         .filter(p => p.isToday) // 只保存当天的帖子
         .map(p => ({
-          title: p.title,
-          time: p.time,
-          isToday: p.isToday,
-          images: p.images
-        }))
+        title: p.title,
+        time: p.time,
+        isToday: p.isToday,
+        images: p.images
+      }))
     }));
   
   // 保存到文件（加密）
