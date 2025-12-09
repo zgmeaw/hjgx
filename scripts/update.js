@@ -35,7 +35,7 @@ function getBloggerLinks() {
       const decryptedData = decryptData(fileContent, encryptKey);
       // 如果解密成功，检查数据格式
       if (Array.isArray(decryptedData)) {
-        console.log('从加密的 links.txt 文件读取链接');
+        console.log('从加密的 links.txt 文件读取链接（已隐藏链接信息）');
         // 检查是否是对象数组格式 {name, url}
         if (decryptedData.length > 0 && typeof decryptedData[0] === 'object' && decryptedData[0].url) {
           return decryptedData.filter(item => item && item.url && item.url.trim() !== '');
@@ -53,7 +53,7 @@ function getBloggerLinks() {
       }
     } catch (e) {
       // 如果解密失败，可能是未加密的文本格式（向后兼容）
-      console.log('从 links.txt 文件读取链接（未加密格式，将自动加密）');
+      console.log('从 links.txt 文件读取链接（未加密格式，将自动加密，已隐藏链接信息）');
       const links = fileContent
         .split('\n')
         .map(line => line.trim())
@@ -97,7 +97,7 @@ function saveBloggerLinks(links) {
   
   const encrypted = encryptData(formattedLinks, encryptKey);
   fs.writeFileSync(linksPath, encrypted, 'utf-8');
-  console.log(`✓ 已保存 ${formattedLinks.length} 个链接到 links.txt`);
+  console.log(`✓ 已保存 ${formattedLinks.length} 个链接到 links.txt（已加密）`);
 }
 
 async function getBloggers() {
@@ -129,7 +129,7 @@ async function getBloggers() {
 
   for (const url of urls) {
     console.log(`-------------------------------------------`);
-    console.log(`正在访问: ${url}`);
+    console.log(`正在访问博主 ${urls.indexOf(url) + 1}/${urls.length}`);
     const page = await browser.newPage();
     
     // 设置高级 User-Agent 防止被识别为爬虫
@@ -801,6 +801,27 @@ function generateHTML(bloggers) {
     color: #4a5568;
     line-height: 1.6;
   }
+  .github-token-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #fff5e6;
+    border: 1px solid #ffd700;
+    border-radius: 8px;
+  }
+  .github-token-section label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #2d3748;
+  }
+  .github-token-section input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
 </style>
 <script>
   // 链接管理功能
@@ -840,8 +861,48 @@ function generateHTML(bloggers) {
       currentLinks = [{ name: '', url: '' }];
     }
     
+    // 检查是否已保存 Token
+    const savedToken = localStorage.getItem('github_pat');
+    const tokenSection = document.getElementById('github-token-section');
+    if (savedToken) {
+      // 已保存 Token，隐藏输入框
+      if (tokenSection) {
+        tokenSection.style.display = 'none';
+      }
+    } else {
+      // 未保存 Token，显示输入框
+      if (tokenSection) {
+        tokenSection.style.display = 'block';
+      }
+    }
+    
     renderLinkManager();
     document.getElementById('link-manager').classList.add('active');
+  }
+  
+  function saveToken() {
+    const tokenInput = document.getElementById('github-token');
+    const token = tokenInput ? tokenInput.value.trim() : '';
+    
+    if (!token) {
+      alert('⚠️ 请输入 Token！');
+      return;
+    }
+    
+    // 保存到 localStorage
+    localStorage.setItem('github_pat', token);
+    alert('✓ Token 已保存到浏览器！\\n\\n下次使用时将自动使用，无需再次输入。');
+    
+    // 隐藏输入框
+    const tokenSection = document.getElementById('github-token-section');
+    if (tokenSection) {
+      tokenSection.style.display = 'none';
+    }
+    
+    // 清空输入框
+    if (tokenInput) {
+      tokenInput.value = '';
+    }
   }
   
   function hideLinkManager() {
@@ -904,12 +965,27 @@ function generateHTML(bloggers) {
       url: item.url.trim()
     }));
     
-    // 使用注入的 Token
-    const token = window.githubToken || '';
+    // 从 localStorage 获取 Token
+    let token = localStorage.getItem('github_pat');
     
+    // 如果没有保存的 Token，提示用户输入
     if (!token || token.trim() === '') {
-      alert('❌ 未找到 GitHub Token！\\n\\n请在 GitHub Secrets 中设置 PAT（Personal Access Token）。\\n\\n设置步骤：\\n1. 进入仓库 Settings → Secrets and variables → Actions\\n2. 添加名为 PAT 的 Secret\\n3. 值为你的 GitHub Personal Access Token（需要 repo 权限）');
-      return;
+      const tokenInput = prompt('请输入 GitHub Personal Access Token（需要 repo 权限）：\\n\\n提示：Token 将保存到浏览器中，下次使用时无需再次输入。\\n\\n如果不想输入 Token，可以取消并复制链接列表手动更新。');
+      
+      if (!tokenInput || tokenInput.trim() === '') {
+        // 如果没有输入 Token，复制到剪贴板
+        const linksText = formattedLinks.map(item => item.url).join('\\n');
+        navigator.clipboard.writeText(linksText).then(() => {
+          alert('✓ 链接已复制到剪贴板！\\n\\n请手动更新 links.txt 文件。');
+        }).catch(() => {
+          prompt('请复制以下链接列表：', linksText);
+        });
+        return;
+      }
+      
+      // 保存 Token 到 localStorage
+      token = tokenInput.trim();
+      localStorage.setItem('github_pat', token);
     }
     
     // 使用 GitHub API 自动更新
@@ -919,7 +995,13 @@ function generateHTML(bloggers) {
       hideLinkManager();
     } catch (error) {
       console.error('GitHub API 更新失败:', error);
-      alert('❌ 自动更新失败: ' + error.message + '\\n\\n请检查：\\n1. PAT Secret 是否正确设置\\n2. Token 是否有 repo 权限\\n3. 网络连接是否正常');
+      // 如果 Token 无效，清除保存的 Token
+      if (error.message.includes('Bad credentials') || error.message.includes('401')) {
+        localStorage.removeItem('github_pat');
+        alert('❌ Token 无效或已过期，已清除保存的 Token。\\n\\n请重新输入正确的 Token。');
+      } else {
+        alert('❌ 自动更新失败: ' + error.message + '\\n\\n请检查：\\n1. Token 是否正确\\n2. Token 是否有 repo 权限\\n3. 网络连接是否正常');
+      }
     }
   }
   
@@ -1056,8 +1138,8 @@ function generateHTML(bloggers) {
   const repoOwner = process.env.GITHUB_REPOSITORY_OWNER || '';
   const repoName = process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : '';
   
-  // 从环境变量获取 GitHub Token（如果设置了）
-  const githubToken = process.env.PAT || '';
+  // 注意：不再注入 Token 到 HTML 中，避免泄露
+  // Token 将通过 workflow 的 repository_dispatch 事件使用
   
   html += `<script>
     window.currentBloggerLinks = ${JSON.stringify(mergedLinks)};
@@ -1065,7 +1147,6 @@ function generateHTML(bloggers) {
       owner: ${JSON.stringify(repoOwner)},
       repo: ${JSON.stringify(repoName)}
     };
-    window.githubToken = ${JSON.stringify(githubToken)};
   </script>`;
 
   // 解析日期字符串（"12-05"格式）为Date对象，用于排序
@@ -1224,9 +1305,16 @@ function generateHTML(bloggers) {
         2. 填写博主名称和链接地址<br>
         3. 新添加的链接名称可以为空，等下一次自动执行爬取任务时会自动补上<br>
         4. 点击"删除"按钮删除链接<br>
-        5. 点击"保存"按钮保存链接（需要先在 GitHub Secrets 中设置 PAT）<br>
+        5. 首次使用需要输入 GitHub Token，之后会自动保存到浏览器中<br>
+        6. 点击"保存"按钮保存链接<br>
         <br>
-        <strong>💡 提示：</strong>链接和名称会保存到 links.txt 文件（加密存储）。系统会自动检测并加密未加密的文件。需要在 GitHub Secrets 中设置 PAT 才能使用自动更新功能。
+        <strong>💡 提示：</strong>链接和名称会保存到 links.txt 文件（加密存储）。Token 仅存储在您的浏览器中，不会上传到服务器。
+      </div>
+      <div class="github-token-section" id="github-token-section" style="display: none;">
+        <label for="github-token">GitHub Personal Access Token（首次使用需要输入）：</label>
+        <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+        <button class="btn-save-token" onclick="saveToken()" style="margin-top: 8px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">保存 Token</button>
+        <small style="display: block; margin-top: 8px; color: #718096; font-size: 12px;">💡 Token 仅存储在您的浏览器中，不会上传到服务器。创建 Token 时需勾选 "repo" 权限。</small>
       </div>
       <button class="btn-add" onclick="addLink()">➕ 添加链接</button>
       <div class="link-list" id="link-list"></div>
