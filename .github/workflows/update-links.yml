@@ -49,7 +49,7 @@ jobs:
           console.log('✓ 已加密保存 ' + formattedLinks.length + ' 个链接到 links.txt');
           "
         env:
-          LINKS_JSON: ${{ github.event.client_payload.links }}
+          LINKS_JSON: ${{ toJSON(github.event.client_payload.links) }}
           DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
 
       - name: Commit & push
