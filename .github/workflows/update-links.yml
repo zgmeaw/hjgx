@@ -1,0 +1,60 @@
+name: Update Links
+on:
+  repository_dispatch:
+    types: [update-links]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update and encrypt links.txt
+        run: |
+          # 将链接数组（包含名称和URL）转换为 JSON 并加密
+          node -e "
+          const crypto = require('crypto');
+          const fs = require('fs');
+          const links = JSON.parse(process.env.LINKS_JSON);
+          const key = process.env.DATA_ENCRYPT_KEY;
+          
+          if (!key) {
+            console.error('❌ DATA_ENCRYPT_KEY 未设置');
+            process.exit(1);
+          }
+          
+          // 确保格式正确：{name: string, url: string}[]
+          const formattedLinks = links.map(item => ({
+            name: (item.name || '').trim(),
+            url: (item.url || item).trim() // 兼容旧格式（纯字符串）
+          })).filter(item => item.url);
+          
+          const keyHash = crypto.createHash('sha256').update(key).digest();
+          const iv = crypto.randomBytes(16);
+          const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
+          let encrypted = cipher.update(JSON.stringify(formattedLinks), 'utf8', 'hex');
+          encrypted += cipher.final('hex');
+          const result = iv.toString('hex') + ':' + encrypted;
+          
+          fs.writeFileSync('links.txt', result, 'utf-8');
+          console.log('✓ 已加密保存 ' + formattedLinks.length + ' 个链接到 links.txt');
+          "
+        env:
+          LINKS_JSON: ${{ github.event.client_payload.links }}
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          git add links.txt
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update links from web interface" && git push)

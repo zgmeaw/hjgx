@@ -7,43 +7,114 @@ const crypto = require('crypto');
 // 辅助函数：延迟
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// 获取博主链接列表（优先从环境变量，否则从文件）
+// 获取博主链接列表（从加密的 links.txt 文件读取）
+// 返回格式：{name: string, url: string}[]
 function getBloggerLinks() {
-  // 优先从环境变量读取（GitHub Secrets）
-  if (process.env.BLOGGER_LINKS) {
-    console.log('从环境变量 BLOGGER_LINKS 读取链接');
-    return process.env.BLOGGER_LINKS
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line && !line.startsWith('#'));
-  }
-  
-  // 回退到 links.txt 文件
   const linksPath = path.join(__dirname, '../links.txt');
-  if (fs.existsSync(linksPath)) {
-    console.log('从 links.txt 文件读取链接');
-    return fs.readFileSync(linksPath, 'utf-8')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'));
+  const encryptKey = process.env.DATA_ENCRYPT_KEY;
+  
+  if (!encryptKey) {
+    console.error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于解密链接文件');
+    return [];
   }
   
-  console.log('⚠️ 未找到链接配置（环境变量 BLOGGER_LINKS 或 links.txt 文件）');
+  if (!fs.existsSync(linksPath)) {
+    console.log('⚠️ links.txt 文件不存在，请先通过网页管理界面添加链接');
+    return [];
+  }
+  
+  try {
+    const fileContent = fs.readFileSync(linksPath, 'utf-8').trim();
+    if (!fileContent) {
+      console.log('⚠️ links.txt 文件为空');
+      return [];
+    }
+    
+    // 尝试解密（如果文件是加密的）
+    try {
+      const decryptedData = decryptData(fileContent, encryptKey);
+      // 如果解密成功，检查数据格式
+      if (Array.isArray(decryptedData)) {
+        console.log('从加密的 links.txt 文件读取链接');
+        // 检查是否是对象数组格式 {name, url}
+        if (decryptedData.length > 0 && typeof decryptedData[0] === 'object' && decryptedData[0].url) {
+          return decryptedData.filter(item => item && item.url && item.url.trim() !== '');
+        } else {
+          // 旧格式：字符串数组，转换为新格式
+          const converted = decryptedData
+            .filter(link => link && link.trim() !== '')
+            .map(url => ({ name: '', url: url.trim() }));
+          // 保存转换后的格式
+          const encrypted = encryptData(converted, encryptKey);
+          fs.writeFileSync(linksPath, encrypted, 'utf-8');
+          console.log('✓ 已转换链接格式为 {name, url}');
+          return converted;
+        }
+      }
+    } catch (e) {
+      // 如果解密失败，可能是未加密的文本格式（向后兼容）
+      console.log('从 links.txt 文件读取链接（未加密格式，将自动加密）');
+      const links = fileContent
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('#'))
+        .map(url => ({ name: '', url: url }));
+      
+      // 自动加密并保存
+      if (links.length > 0) {
+        const encrypted = encryptData(links, encryptKey);
+        fs.writeFileSync(linksPath, encrypted, 'utf-8');
+        console.log('✓ 已自动加密 links.txt 文件');
+      }
+      
+      return links;
+    }
+  } catch (error) {
+    console.error('❌ 读取 links.txt 文件失败:', error.message);
+    return [];
+  }
+  
   return [];
 }
 
-async function getBloggers() {
-  // 获取链接列表
-  const urls = getBloggerLinks();
+// 保存博主链接列表（加密保存）
+function saveBloggerLinks(links) {
+  const linksPath = path.join(__dirname, '../links.txt');
+  const encryptKey = process.env.DATA_ENCRYPT_KEY;
   
-  if (urls.length === 0) {
+  if (!encryptKey) {
+    console.error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于加密链接文件');
+    return;
+  }
+  
+  // 确保格式正确
+  const formattedLinks = links
+    .filter(item => item && item.url && item.url.trim() !== '')
+    .map(item => ({
+      name: item.name || '',
+      url: item.url.trim()
+    }));
+  
+  const encrypted = encryptData(formattedLinks, encryptKey);
+  fs.writeFileSync(linksPath, encrypted, 'utf-8');
+  console.log(`✓ 已保存 ${formattedLinks.length} 个链接到 links.txt`);
+}
+
+async function getBloggers() {
+  // 获取链接列表（包含名称和URL）
+  const linksData = getBloggerLinks();
+  
+  if (linksData.length === 0) {
     console.log('没有配置任何博主链接');
     return [];
   }
 
+  // 提取URL列表用于爬取
+  const urls = linksData.map(item => item.url);
   console.log(`计划抓取 ${urls.length} 个博主`);
 
   const bloggers = [];
+  const linksMap = new Map(linksData.map(item => [item.url, item.name]));
   
   // 启动浏览器配置
   const browser = await puppeteer.launch({
@@ -427,6 +498,11 @@ async function getBloggers() {
       // 从URL中提取博主ID，构建主页链接
       const homepageUrl = url; // 直接使用原始URL作为主页链接
       
+      // 如果链接对应的名称为空，更新为爬取到的名称
+      if (linksMap.has(homepageUrl) && (!linksMap.get(homepageUrl) || linksMap.get(homepageUrl).trim() === '')) {
+        linksMap.set(homepageUrl, nickname);
+      }
+      
       bloggers.push({ 
         nickname, 
         posts: posts.slice(0, 3),
@@ -442,6 +518,24 @@ async function getBloggers() {
   }
 
   await browser.close();
+  
+  // 更新链接名称（如果有新获取到的名称）
+  const updatedLinks = linksData.map(item => ({
+    name: linksMap.get(item.url) || item.name || '',
+    url: item.url
+  }));
+  
+  // 检查是否有名称更新
+  const hasNameUpdate = updatedLinks.some((item, index) => {
+    const original = linksData[index];
+    return original && (original.name || '').trim() !== (item.name || '').trim();
+  });
+  
+  if (hasNameUpdate) {
+    saveBloggerLinks(updatedLinks);
+    console.log('✓ 已更新链接对应的博主名称');
+  }
+  
   return bloggers;
 }
 
@@ -575,8 +669,317 @@ function generateHTML(bloggers) {
   .main-content.unlocked {
     display: block;
   }
+  .link-manager {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 20000;
+    overflow-y: auto;
+  }
+  .link-manager.active {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+  }
+  .link-manager-content {
+    background: white;
+    border-radius: 16px;
+    padding: 30px;
+    max-width: 800px;
+    width: 100%;
+    margin-top: 50px;
+    margin-bottom: 50px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  .link-manager-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .link-manager-header h2 {
+    margin: 0;
+    color: #2d3748;
+  }
+  .link-list {
+    margin-bottom: 20px;
+  }
+  .link-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: #f7fafc;
+    gap: 10px;
+  }
+  .link-item .name-input {
+    width: 150px;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  .link-item .url-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  .link-item button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-left: 5px;
+  }
+  .btn-delete {
+    background: #e53e3e;
+    color: white;
+  }
+  .btn-delete:hover {
+    background: #c53030;
+  }
+  .btn-add {
+    background: #48bb78;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+  .btn-add:hover {
+    background: #38a169;
+  }
+  .btn-close {
+    background: #718096;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn-close:hover {
+    background: #4a5568;
+  }
+  .link-manager-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .btn-save {
+    background: #667eea;
+    color: white;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+  }
+  .btn-save:hover {
+    background: #5568d3;
+  }
+  .link-manager-info {
+    background: #edf2f7;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    color: #4a5568;
+    line-height: 1.6;
+  }
 </style>
 <script>
+  // 链接管理功能
+  let currentLinks = [];
+  
+  function showLinkManager() {
+    // 从全局变量中读取链接（由服务器端注入）
+    if (window.currentBloggerLinks && window.currentBloggerLinks.length > 0) {
+      currentLinks = window.currentBloggerLinks.map(item => ({
+        name: item.name || '',
+        url: item.url || ''
+      }));
+    } else {
+      // 如果没有，从页面中提取
+      currentLinks = [];
+      document.querySelectorAll('.card').forEach(card => {
+        const linkEl = card.querySelector('.homepage-btn');
+        const nameEl = card.querySelector('.name');
+        if (linkEl && linkEl.href && linkEl.href !== '#' && linkEl.href !== window.location.href + '#') {
+          currentLinks.push({
+            name: nameEl ? nameEl.innerText.trim() : '',
+            url: linkEl.href
+          });
+        }
+      });
+      // 去重
+      const seen = new Set();
+      currentLinks = currentLinks.filter(item => {
+        if (seen.has(item.url)) return false;
+        seen.add(item.url);
+        return true;
+      });
+    }
+    
+    // 如果没有找到链接，初始化一个空对象
+    if (currentLinks.length === 0) {
+      currentLinks = [{ name: '', url: '' }];
+    }
+    
+    renderLinkManager();
+    document.getElementById('link-manager').classList.add('active');
+  }
+  
+  function hideLinkManager() {
+    document.getElementById('link-manager').classList.remove('active');
+  }
+  
+  function renderLinkManager() {
+    const container = document.getElementById('link-list');
+    container.innerHTML = '';
+    
+    currentLinks.forEach((item, index) => {
+      const div = document.createElement('div');
+      div.className = 'link-item';
+      div.innerHTML = \`
+        <input type="text" class="name-input" value="\${item.name || ''}" id="name-\${index}" placeholder="博主名称" onchange="updateLinkName(\${index}, this.value)">
+        <input type="text" class="url-input" value="\${item.url || ''}" id="url-\${index}" placeholder="链接地址" onchange="updateLinkUrl(\${index}, this.value)">
+        <button class="btn-delete" onclick="deleteLink(\${index})">删除</button>
+      \`;
+      container.appendChild(div);
+    });
+  }
+  
+  function addLink() {
+    currentLinks.push({ name: '', url: '' });
+    renderLinkManager();
+    // 聚焦到新添加的URL输入框
+    const newInput = document.getElementById('url-' + (currentLinks.length - 1));
+    if (newInput) newInput.focus();
+  }
+  
+  function deleteLink(index) {
+    currentLinks.splice(index, 1);
+    renderLinkManager();
+  }
+  
+  function updateLinkName(index, value) {
+    if (currentLinks[index]) {
+      currentLinks[index].name = value.trim();
+    }
+  }
+  
+  function updateLinkUrl(index, value) {
+    if (currentLinks[index]) {
+      currentLinks[index].url = value.trim();
+    }
+  }
+  
+  async function saveLinks() {
+    // 过滤空链接（至少要有URL）
+    const validLinks = currentLinks.filter(item => item && item.url && item.url.trim() !== '');
+    
+    if (validLinks.length === 0) {
+      alert('⚠️ 请至少添加一个链接！');
+      return;
+    }
+    
+    // 格式化链接数据（确保格式正确）
+    const formattedLinks = validLinks.map(item => ({
+      name: (item.name || '').trim(),
+      url: item.url.trim()
+    }));
+    
+    // 使用注入的 Token
+    const token = window.githubToken || '';
+    
+    if (!token || token.trim() === '') {
+      alert('❌ 未找到 GitHub Token！\\n\\n请在 GitHub Secrets 中设置 PAT（Personal Access Token）。\\n\\n设置步骤：\\n1. 进入仓库 Settings → Secrets and variables → Actions\\n2. 添加名为 PAT 的 Secret\\n3. 值为你的 GitHub Personal Access Token（需要 repo 权限）');
+      return;
+    }
+    
+    // 使用 GitHub API 自动更新
+    try {
+      await updateLinksViaGitHubAPI(token, formattedLinks);
+      alert('✓ 链接已成功更新到 GitHub！\\n\\n文件将在几秒内自动更新，下次运行时会自动加密。\\n\\n提示：新添加的链接名称暂时为空，等下一次自动执行爬取任务时会自动补上对应的名字。');
+      hideLinkManager();
+    } catch (error) {
+      console.error('GitHub API 更新失败:', error);
+      alert('❌ 自动更新失败: ' + error.message + '\\n\\n请检查：\\n1. PAT Secret 是否正确设置\\n2. Token 是否有 repo 权限\\n3. 网络连接是否正常');
+    }
+  }
+  
+  async function updateLinksViaGitHubAPI(token, linksArray) {
+    // 优先使用注入的仓库信息
+    const repoInfo = window.repoInfo || {};
+    let owner = repoInfo.owner;
+    let repo = repoInfo.repo;
+    
+    // 如果注入的信息不完整，尝试从 URL 推断
+    if (!owner || !repo) {
+      // 假设页面托管在 GitHub Pages，URL 格式可能是：https://username.github.io/repo-name/
+      const repoMatch = window.location.hostname.match(/([^.]+)\.github\.io/);
+      if (repoMatch) {
+        owner = owner || repoMatch[1];
+        const pathParts = window.location.pathname.split('/').filter(p => p);
+        repo = repo || pathParts[0] || 'hjgx'; // 默认仓库名
+      }
+    }
+    
+    // 如果还是无法确定，提示用户输入
+    if (!owner || !repo) {
+      owner = owner || prompt('请输入 GitHub 用户名/组织名：');
+      repo = repo || prompt('请输入仓库名：');
+      
+      if (!owner || !repo) {
+        throw new Error('无法确定仓库信息，请手动输入');
+      }
+    }
+    
+    // 使用 repository_dispatch 事件触发 workflow，而不是直接更新文件
+    // 这样 Token 不会暴露，workflow 会使用 Secret 中的密钥来加密
+    return await triggerWorkflow(token, owner, repo, linksArray);
+  }
+  
+  async function triggerWorkflow(token, owner, repo, linksArray) {
+    // 通过 repository_dispatch 事件触发 workflow
+    const response = await fetch(\`https://api.github.com/repos/\${owner}/\${repo}/dispatches\`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': \`token \${token}\`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        event_type: 'update-links',
+        client_payload: {
+          links: linksArray
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: '触发 workflow 失败' }));
+      throw new Error(error.message || '触发 workflow 失败');
+    }
+    
+    return { success: true };
+  }
+  
   function checkPassword() {
     const password = document.getElementById('page-password').value;
     const correctPassword = '${escapeJsString(pagePassword)}';
@@ -626,11 +1029,87 @@ function generateHTML(bloggers) {
 <header>
   <h1>🌊 动态监控站</h1>
   <p class="update-time">最后更新：${now}</p>
+  <button id="manage-links-btn" onclick="showLinkManager()" style="margin-top: 10px; padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; cursor: pointer; font-size: 14px;">🔧 管理链接</button>
 </header>
 <div class="container">`;
 
+  // 获取当前所有博主链接和名称（用于链接管理功能）
+  const currentBloggerLinks = bloggers.map(b => ({
+    name: b.nickname || '',
+    url: b.homepageUrl
+  })).filter(item => item.url);
+  
+  // 读取 links.txt 中的完整数据（包括未爬取的链接）
+  const allLinksData = getBloggerLinks();
+  const allLinksMap = new Map(allLinksData.map(item => [item.url, item]));
+  
+  // 合并数据：优先使用爬取到的名称，否则使用 links.txt 中的名称
+  const mergedLinks = allLinksData.map(item => {
+    const blogger = bloggers.find(b => b.homepageUrl === item.url);
+    return {
+      name: blogger ? blogger.nickname : (item.name || ''),
+      url: item.url
+    };
+  });
+  
+  // 尝试从环境变量获取仓库信息（GitHub Actions 中可用）
+  const repoOwner = process.env.GITHUB_REPOSITORY_OWNER || '';
+  const repoName = process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : '';
+  
+  // 从环境变量获取 GitHub Token（如果设置了）
+  const githubToken = process.env.PAT || '';
+  
+  html += `<script>
+    window.currentBloggerLinks = ${JSON.stringify(mergedLinks)};
+    window.repoInfo = {
+      owner: ${JSON.stringify(repoOwner)},
+      repo: ${JSON.stringify(repoName)}
+    };
+    window.githubToken = ${JSON.stringify(githubToken)};
+  </script>`;
+
+  // 解析日期字符串（"12-05"格式）为Date对象，用于排序
+  const parseDateFromTime = (timeStr) => {
+    if (!timeStr || timeStr === '未知时间') return new Date(0); // 未知时间排最后
+    const dateMatch = timeStr.match(/(\d{1,2})[-\/](\d{1,2})/);
+    if (dateMatch) {
+      const month = parseInt(dateMatch[1]);
+      const day = parseInt(dateMatch[2]);
+      const now = new Date();
+      const year = now.getFullYear();
+      // 如果日期是未来的（可能是去年的），减一年
+      const postDate = new Date(year, month - 1, day);
+      if (postDate > now) {
+        return new Date(year - 1, month - 1, day);
+      }
+      return postDate;
+    }
+    return new Date(0); // 无法解析的排最后
+  };
+
+  // 对博主按最新帖子日期排序（最新的在前）
+  const sortedBloggers = [...bloggers].sort((a, b) => {
+    // 获取每个博主的最新帖子日期
+    const getLatestDate = (blogger) => {
+      if (!blogger.posts || blogger.posts.length === 0) return new Date(0);
+      // 找到最新的帖子日期
+      let latestDate = new Date(0);
+      blogger.posts.forEach(post => {
+        const postDate = parseDateFromTime(post.time);
+        if (postDate > latestDate) {
+          latestDate = postDate;
+        }
+      });
+      return latestDate;
+    };
+    
+    const dateA = getLatestDate(a);
+    const dateB = getLatestDate(b);
+    return dateB.getTime() - dateA.getTime(); // 降序排列
+  });
+
   let hasNew = false;
-  bloggers.forEach((blogger) => {
+  sortedBloggers.forEach((blogger) => {
     const { nickname, posts, homepageUrl } = blogger;
     const newCount = posts.filter(p => p.isToday).length;
     if (newCount > 0) hasNew = true;
@@ -731,6 +1210,31 @@ function generateHTML(bloggers) {
   <footer>
     <p>2025</a></p>
   </footer>
+  
+  <!-- 链接管理界面 -->
+  <div class="link-manager" id="link-manager">
+    <div class="link-manager-content">
+      <div class="link-manager-header">
+        <h2>🔧 管理博主链接</h2>
+        <button class="btn-close" onclick="hideLinkManager()">关闭</button>
+      </div>
+      <div class="link-manager-info">
+        <strong>使用说明：</strong><br>
+        1. 点击"添加链接"按钮添加新链接<br>
+        2. 填写博主名称和链接地址<br>
+        3. 新添加的链接名称可以为空，等下一次自动执行爬取任务时会自动补上<br>
+        4. 点击"删除"按钮删除链接<br>
+        5. 点击"保存"按钮保存链接（需要先在 GitHub Secrets 中设置 PAT）<br>
+        <br>
+        <strong>💡 提示：</strong>链接和名称会保存到 links.txt 文件（加密存储）。系统会自动检测并加密未加密的文件。需要在 GitHub Secrets 中设置 PAT 才能使用自动更新功能。
+      </div>
+      <button class="btn-add" onclick="addLink()">➕ 添加链接</button>
+      <div class="link-list" id="link-list"></div>
+      <div class="link-manager-actions">
+        <button class="btn-save" onclick="saveLinks()">💾 保存链接</button>
+      </div>
+    </div>
+  </div>
 </div>
   </body></html>`;
 

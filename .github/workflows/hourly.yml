@@ -32,14 +32,14 @@ jobs:
         env:
           # 告诉 Puppeteer 使用刚才下载的 Chrome
           PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
-          # 从 GitHub Secrets 读取博主链接（每行一个链接）
-          BLOGGER_LINKS: ${{ secrets.BLOGGER_LINKS }}
           # Google 搜索域名（必需，未设置时搜索按钮将不可用）
           GOOGLE_SEARCH_DOMAIN: ${{ secrets.GOOGLE_SEARCH_DOMAIN }}
-          # 数据加密密钥（必需，用于加密A、B记录）
+          # 数据加密密钥（必需，用于加密A、B记录和 links.txt）
           DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
           # 网页密码（必需，用于网页访问保护）
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          # GitHub Personal Access Token（可选，用于网页自动更新链接）
+          PAT: ${{ secrets.PAT }}
 
       # 如果脚本生成了 debug 图片，上传以便查看
       - name: Upload Debug Artifacts
@@ -56,7 +56,8 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "action@github.com"
-          # 提交 index.html 和 data 文件夹
+          # 提交 index.html、data 文件夹和 links.txt（如果存在）
           git add index.html
           git add data/
+          git add links.txt 2>/dev/null || true
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update $(date)" && git push)
