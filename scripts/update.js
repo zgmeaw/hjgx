@@ -1403,7 +1403,13 @@ function saveBloggersLatest(bloggers) {
 
 // 保存A记录：当天有更新的博主数据（用于定时发送，加密保存）
 function saveDailyUpdates(bloggers) {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  // 使用北京时间生成日期，与 send_email.js 保持一致
+  const now = new Date();
+  const beijingTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const year = beijingTime.getFullYear();
+  const month = String(beijingTime.getMonth() + 1).padStart(2, '0');
+  const day = String(beijingTime.getDate()).padStart(2, '0');
+  const today = `${year}-${month}-${day}`; // YYYY-MM-DD (北京时间)
   const dailyFile = path.join(__dirname, `../data/daily_${today}.enc`);
   const dataDir = path.join(__dirname, '../data');
   const encryptKey = process.env.DATA_ENCRYPT_KEY;
