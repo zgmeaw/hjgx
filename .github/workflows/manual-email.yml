@@ -31,5 +31,7 @@ jobs:
           # 微信推送配置（可选）
           WX_WORKER_URL: ${{ secrets.WX_WORKER_URL }}
           WX_TOKEN: ${{ secrets.WX_TOKEN }}
+          # 网站地址（可选，用于微信推送页面跳转）
+          SITE_URL: ${{ secrets.SITE_URL }}
         run: node scripts/send_email_manual.js
 

@@ -252,6 +252,9 @@ async function sendWeChatPush(postCount, dateStr) {
   const title = '动态监控站 - 每日更新';
   const content = `今日有 ${postCount} 条新内容\n\n${dateStr}\n\n请访问网站查看详情`;
   
+  // 获取网站地址（从环境变量或使用默认值）
+  const siteUrl = process.env.SITE_URL || 'https://your-username.github.io/hjgx';
+  
   // 构建请求 URL（使用 GET 方式）
   // WX_WORKER_URL 应该是完整的 URL，例如：https://your-worker.workers.dev/wxsend
   // 如果只提供了基础 URL，自动添加 /wxsend 路径
@@ -264,6 +267,7 @@ async function sendWeChatPush(postCount, dateStr) {
   url.searchParams.set('token', wxToken);
   url.searchParams.set('title', title);
   url.searchParams.set('content', content);
+  url.searchParams.set('site', siteUrl);
   
   try {
     const result = await new Promise((resolve, reject) => {
