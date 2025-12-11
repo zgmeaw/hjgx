@@ -2,6 +2,8 @@
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+const http = require('http');
 
 // 转义HTML特殊字符
 function escapeHtml(text) {
@@ -166,13 +168,13 @@ async function sendEmail() {
       process.exit(1);
     }
   } else {
-    console.log('ℹ️ 今日无更新数据，不发送邮件');
+    console.log('ℹ️ 今日无更新数据，不发送邮件和微信推送');
     return;
   }
   
   // 如果没有内容，不发送
   if (postCount === 0) {
-    console.log('ℹ️ 今日无新内容，不发送邮件');
+    console.log('ℹ️ 今日无新内容，不发送邮件和微信推送');
     return;
   }
   
@@ -212,6 +214,66 @@ async function sendEmail() {
   } catch (error) {
     console.error('❌ 邮件发送失败:', error.message);
     process.exit(1);
+  }
+  
+  // 发送微信推送（与邮件一起发送）
+  await sendWeChatPush(postCount, todayStr);
+}
+
+// 发送微信推送
+async function sendWeChatPush(postCount, dateStr) {
+  const wxWorkerUrl = process.env.WX_WORKER_URL;
+  const wxToken = process.env.WX_TOKEN;
+  
+  // 如果未配置微信推送，跳过
+  if (!wxWorkerUrl || !wxToken) {
+    console.log('ℹ️ 未配置微信推送（WX_WORKER_URL 或 WX_TOKEN），跳过微信推送');
+    return;
+  }
+  
+  // 构建推送内容
+  const title = '动态监控站 - 每日更新';
+  const content = `今日有 ${postCount} 条新内容\n\n${dateStr}\n\n请访问网站查看详情`;
+  
+  // 构建请求 URL（使用 GET 方式）
+  // WX_WORKER_URL 应该是完整的 URL，例如：https://your-worker.workers.dev/wxsend
+  // 如果只提供了基础 URL，自动添加 /wxsend 路径
+  let apiUrl = wxWorkerUrl.trim();
+  if (!apiUrl.endsWith('/wxsend') && !apiUrl.includes('/wxsend?')) {
+    apiUrl = apiUrl.replace(/\/$/, '') + '/wxsend';
+  }
+  
+  const url = new URL(apiUrl);
+  url.searchParams.set('token', wxToken);
+  url.searchParams.set('title', encodeURIComponent(title));
+  url.searchParams.set('content', encodeURIComponent(content));
+  
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const client = url.protocol === 'https:' ? https : http;
+      
+      client.get(url.toString(), (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(data);
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+          }
+        });
+      }).on('error', (err) => {
+        reject(err);
+      });
+    });
+    
+    console.log('✓ 微信推送发送成功');
+    console.log(`  响应: ${result}`);
+  } catch (error) {
+    console.error('❌ 微信推送发送失败:', error.message);
+    // 微信推送失败不影响整体流程，只记录错误
   }
 }
 
