@@ -262,8 +262,8 @@ async function sendWeChatPush(postCount, dateStr) {
   
   const url = new URL(apiUrl);
   url.searchParams.set('token', wxToken);
-  url.searchParams.set('title', encodeURIComponent(title));
-  url.searchParams.set('content', encodeURIComponent(content));
+  url.searchParams.set('title', title);
+  url.searchParams.set('content', content);
   
   try {
     const result = await new Promise((resolve, reject) => {
