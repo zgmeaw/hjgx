@@ -822,6 +822,82 @@ function generateHTML(bloggers) {
     font-size: 14px;
     box-sizing: border-box;
   }
+  .config-manager {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 20000;
+    overflow-y: auto;
+  }
+  .config-manager.active {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+  }
+  .config-manager-content {
+    background: white;
+    border-radius: 16px;
+    padding: 30px;
+    max-width: 600px;
+    width: 100%;
+    margin-top: 50px;
+    margin-bottom: 50px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  .config-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    background: #f7fafc;
+  }
+  .config-item-label {
+    flex: 1;
+  }
+  .config-item-label strong {
+    display: block;
+    margin-bottom: 5px;
+    color: #2d3748;
+  }
+  .config-item-label small {
+    display: block;
+    color: #718096;
+    font-size: 12px;
+  }
+  .config-toggle {
+    position: relative;
+    width: 60px;
+    height: 30px;
+    background: #cbd5e0;
+    border-radius: 15px;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .config-toggle.active {
+    background: #48bb78;
+  }
+  .config-toggle-slider {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+  .config-toggle.active .config-toggle-slider {
+    transform: translateX(30px);
+  }
 </style>
 <script>
   // 链接管理功能
@@ -947,6 +1023,116 @@ function generateHTML(bloggers) {
   function updateLinkUrl(index, value) {
     if (currentLinks[index]) {
       currentLinks[index].url = value.trim();
+    }
+  }
+  
+  // 配置管理功能
+  let currentConfig = {
+    emailEnabled: 'on',
+    crawlerEnabled: 'on',
+    wechatEnabled: 'on'
+  };
+  
+  function showConfigManager() {
+    // 从服务器获取当前配置（通过注入的方式）
+    if (window.currentConfig) {
+      currentConfig = { ...window.currentConfig };
+    }
+    
+    // 更新界面显示
+    updateConfigUI();
+    document.getElementById('config-manager').classList.add('active');
+  }
+  
+  function hideConfigManager() {
+    document.getElementById('config-manager').classList.remove('active');
+  }
+  
+  function updateConfigUI() {
+    document.getElementById('toggle-email').classList.toggle('active', currentConfig.emailEnabled === 'on');
+    document.getElementById('toggle-crawler').classList.toggle('active', currentConfig.crawlerEnabled === 'on');
+    document.getElementById('toggle-wechat').classList.toggle('active', currentConfig.wechatEnabled === 'on');
+  }
+  
+  function toggleConfig(type) {
+    const key = type === 'email' ? 'emailEnabled' : (type === 'crawler' ? 'crawlerEnabled' : 'wechatEnabled');
+    currentConfig[key] = currentConfig[key] === 'on' ? 'off' : 'on';
+    updateConfigUI();
+  }
+  
+  async function saveConfig() {
+    // 获取用户输入的 Token
+    const token = localStorage.getItem('github_pat') || '';
+    
+    if (!token || token.trim() === '') {
+      const tokenInput = prompt('请输入 GitHub Personal Access Token（需要 repo 权限）：\\n\\n提示：Token 将保存到浏览器中，下次使用时无需再次输入。');
+      
+      if (!tokenInput || tokenInput.trim() === '') {
+        alert('⚠️ 需要 Token 才能保存配置！');
+        return;
+      }
+      
+      localStorage.setItem('github_pat', tokenInput.trim());
+    }
+    
+    const finalToken = localStorage.getItem('github_pat');
+    
+    // 通过 repository_dispatch 事件触发 workflow
+    try {
+      const repoInfo = window.repoInfo || {};
+      let owner = repoInfo.owner;
+      let repo = repoInfo.repo;
+      
+      if (!owner || !repo) {
+        const repoMatch = window.location.hostname.match(/([^.]+)\.github\.io/);
+        if (repoMatch) {
+          owner = repoMatch[1];
+          const pathParts = window.location.pathname.split('/').filter(p => p);
+          repo = pathParts[0] || 'hjgx';
+        }
+      }
+      
+      if (!owner || !repo) {
+        owner = prompt('请输入 GitHub 用户名/组织名：');
+        repo = prompt('请输入仓库名：');
+        
+        if (!owner || !repo) {
+          throw new Error('无法确定仓库信息');
+        }
+      }
+      
+      // 通过 repository_dispatch 触发 workflow
+      const response = await fetch(\`https://api.github.com/repos/\${owner}/\${repo}/dispatches\`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': \`token \${finalToken}\`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          event_type: 'update-config',
+          client_payload: {
+            config: currentConfig
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: '触发 workflow 失败' }));
+        throw new Error(error.message || '触发 workflow 失败');
+      }
+      
+      alert('✓ 配置已成功保存！\\n\\n配置将在几秒内生效。');
+      hideConfigManager();
+    } catch (error) {
+      console.error('保存配置失败:', error);
+      // 如果 Token 无效，清除保存的 Token
+      if (error.message.includes('Bad credentials') || error.message.includes('401')) {
+        localStorage.removeItem('github_pat');
+        alert('❌ Token 无效或已过期，已清除保存的 Token。\\n\\n请重新输入正确的 Token。');
+      } else {
+        alert('❌ 保存配置失败: ' + error.message + '\\n\\n请检查：\\n1. Token 是否正确\\n2. Token 是否有 repo 权限\\n3. 网络连接是否正常');
+      }
     }
   }
   
@@ -1111,7 +1297,10 @@ function generateHTML(bloggers) {
 <header>
   <h1>🌊 动态监控站</h1>
   <p class="update-time">最后更新：${now}</p>
-  <button id="manage-links-btn" onclick="showLinkManager()" style="margin-top: 10px; padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; cursor: pointer; font-size: 14px;">🔧 管理链接</button>
+  <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+    <button id="manage-links-btn" onclick="showLinkManager()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; cursor: pointer; font-size: 14px;">🔧 管理链接</button>
+    <button id="manage-config-btn" onclick="showConfigManager()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; cursor: pointer; font-size: 14px;">⚙️ 功能配置</button>
+  </div>
 </header>
 <div class="container">`;
 
@@ -1141,12 +1330,17 @@ function generateHTML(bloggers) {
   // 注意：不再注入 Token 到 HTML 中，避免泄露
   // Token 将通过 workflow 的 repository_dispatch 事件使用
   
+  // 读取当前配置
+  const { getConfig } = require('./config');
+  const currentConfig = getConfig();
+  
   html += `<script>
     window.currentBloggerLinks = ${JSON.stringify(mergedLinks)};
     window.repoInfo = {
       owner: ${JSON.stringify(repoOwner)},
       repo: ${JSON.stringify(repoName)}
     };
+    window.currentConfig = ${JSON.stringify(currentConfig)};
   </script>`;
 
   // 解析日期字符串（"12-05"格式）为Date对象，用于排序
@@ -1323,6 +1517,54 @@ function generateHTML(bloggers) {
       </div>
     </div>
   </div>
+  
+  <!-- 配置管理界面 -->
+  <div class="config-manager" id="config-manager">
+    <div class="config-manager-content">
+      <div class="link-manager-header">
+        <h2>⚙️ 功能配置</h2>
+        <button class="btn-close" onclick="hideConfigManager()">关闭</button>
+      </div>
+      <div class="link-manager-info" style="margin-bottom: 20px;">
+        <strong>功能说明：</strong><br>
+        1. 定时邮箱发送：控制每晚十点是否自动发送邮件<br>
+        2. 爬虫功能：控制是否执行爬取任务（总开关）<br>
+        3. 微信推送功能：控制是否发送微信推送消息<br>
+        <br>
+        <strong>💡 提示：</strong>配置会保存到加密文件中，修改后立即生效。
+      </div>
+      <div class="config-item">
+        <div class="config-item-label">
+          <strong>定时邮箱发送</strong>
+          <small>控制每晚十点是否自动发送邮件通知</small>
+        </div>
+        <div class="config-toggle" id="toggle-email" onclick="toggleConfig('email')">
+          <div class="config-toggle-slider"></div>
+        </div>
+      </div>
+      <div class="config-item">
+        <div class="config-item-label">
+          <strong>爬虫功能</strong>
+          <small>控制是否执行爬取任务（总开关）</small>
+        </div>
+        <div class="config-toggle" id="toggle-crawler" onclick="toggleConfig('crawler')">
+          <div class="config-toggle-slider"></div>
+        </div>
+      </div>
+      <div class="config-item">
+        <div class="config-item-label">
+          <strong>微信推送功能</strong>
+          <small>控制是否发送微信推送消息</small>
+        </div>
+        <div class="config-toggle" id="toggle-wechat" onclick="toggleConfig('wechat')">
+          <div class="config-toggle-slider"></div>
+        </div>
+      </div>
+      <div class="link-manager-actions">
+        <button class="btn-save" onclick="saveConfig()">💾 保存配置</button>
+      </div>
+    </div>
+  </div>
 </div>
   </body></html>`;
 
@@ -1461,6 +1703,13 @@ function saveDailyUpdates(bloggers) {
 }
 
 async function main() {
+  // 检查爬虫功能是否启用
+  const { isCrawlerEnabled } = require('./config');
+  if (!isCrawlerEnabled()) {
+    console.log('ℹ️ 爬虫功能已关闭，跳过执行');
+    return;
+  }
+  
   const bloggers = await getBloggers();
   generateHTML(bloggers);
   // 保存B记录（所有博主最新3条帖子）

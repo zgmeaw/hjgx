@@ -1,0 +1,60 @@
+name: Update Config
+on:
+  repository_dispatch:
+    types: [update-config]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update and encrypt config.enc
+        run: |
+          # 将配置对象转换为 JSON 并加密
+          node -e "
+          const crypto = require('crypto');
+          const fs = require('fs');
+          const config = JSON.parse(process.env.CONFIG_JSON);
+          const key = process.env.DATA_ENCRYPT_KEY;
+          
+          if (!key) {
+            console.error('❌ DATA_ENCRYPT_KEY 未设置');
+            process.exit(1);
+          }
+          
+          // 确保 data 目录存在
+          const dataDir = 'data';
+          if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+          }
+          
+          const keyHash = crypto.createHash('sha256').update(key).digest();
+          const iv = crypto.randomBytes(16);
+          const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
+          let encrypted = cipher.update(JSON.stringify(config), 'utf8', 'hex');
+          encrypted += cipher.final('hex');
+          const result = iv.toString('hex') + ':' + encrypted;
+          
+          fs.writeFileSync('data/config.enc', result, 'utf-8');
+          console.log('✓ 已加密保存配置文件');
+          "
+        env:
+          CONFIG_JSON: ${{ toJSON(github.event.client_payload.config) }}
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          git add data/config.enc
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update config from web interface" && git push)

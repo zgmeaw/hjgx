@@ -60,4 +60,30 @@ jobs:
           git add index.html
           git add data/
           git add links.txt 2>/dev/null || true
+          # 如果配置文件是未加密的 JSON 格式，自动加密
+          if [ -f data/config.enc ]; then
+            node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const configPath = 'data/config.enc';
+            const key = process.env.DATA_ENCRYPT_KEY;
+            try {
+              const content = fs.readFileSync(configPath, 'utf-8');
+              // 尝试解析为 JSON（未加密格式）
+              JSON.parse(content);
+              // 如果是 JSON，说明未加密，需要加密
+              const config = JSON.parse(content);
+              const keyHash = crypto.createHash('sha256').update(key).digest();
+              const iv = crypto.randomBytes(16);
+              const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
+              let encrypted = cipher.update(JSON.stringify(config), 'utf8', 'hex');
+              encrypted += cipher.final('hex');
+              const result = iv.toString('hex') + ':' + encrypted;
+              fs.writeFileSync(configPath, result, 'utf-8');
+              console.log('✓ 已自动加密配置文件');
+            } catch (e) {
+              // 已经是加密格式或格式错误，跳过
+            }
+            " || true
+          fi
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update $(date)" && git push)

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { isEmailEnabled, isWechatEnabled } = require('./config');
 
 // 转义HTML特殊字符
 function escapeHtml(text) {
@@ -131,6 +132,12 @@ function decryptData(encryptedData, key) {
 
 // 发送邮件
 async function sendEmail() {
+  // 检查定时邮箱功能是否启用
+  if (!isEmailEnabled()) {
+    console.log('ℹ️ 定时邮箱发送功能已关闭，跳过执行');
+    return;
+  }
+  
   const sender = process.env.QQ_MAIL;
   const authCode = process.env.QQ_AUTH_CODE;
   const encryptKey = process.env.DATA_ENCRYPT_KEY;
@@ -216,11 +223,15 @@ async function sendEmail() {
     process.exit(1);
   }
   
-  // 发送微信推送（与邮件一起发送）
-  await sendWeChatPush(postCount, todayStr);
+  // 发送微信推送（如果启用）
+  if (isWechatEnabled()) {
+    await sendWeChatPush(postCount, todayStr);
+  } else {
+    console.log('ℹ️ 微信推送功能已关闭，跳过微信推送');
+  }
 }
 
-// 发送微信推送
+// 发送微信推送（通用函数，可被其他脚本调用）
 async function sendWeChatPush(postCount, dateStr) {
   const wxWorkerUrl = process.env.WX_WORKER_URL;
   const wxToken = process.env.WX_TOKEN;
@@ -228,6 +239,12 @@ async function sendWeChatPush(postCount, dateStr) {
   // 如果未配置微信推送，跳过
   if (!wxWorkerUrl || !wxToken) {
     console.log('ℹ️ 未配置微信推送（WX_WORKER_URL 或 WX_TOKEN），跳过微信推送');
+    return;
+  }
+  
+  // 检查微信推送功能是否启用
+  if (!isWechatEnabled()) {
+    console.log('ℹ️ 微信推送功能已关闭，跳过微信推送');
     return;
   }
   
@@ -282,5 +299,5 @@ if (require.main === module) {
   sendEmail().catch(console.error);
 }
 
-module.exports = { sendEmail, generateEmailHTML };
+module.exports = { sendEmail, generateEmailHTML, sendWeChatPush };
 

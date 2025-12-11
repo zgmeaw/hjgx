@@ -3,6 +3,9 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
+const http = require('http');
+const { sendWeChatPush } = require('./send_email');
 
 // 转义HTML特殊字符
 function escapeHtml(text) {
@@ -223,6 +226,15 @@ async function sendEmail() {
     console.error('❌ 邮件发送失败:', error.message);
     process.exit(1);
   }
+  
+  // 发送微信推送（如果启用）
+  const dateStr = new Date().toLocaleDateString('zh-CN', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric',
+    timeZone: 'Asia/Shanghai'
+  });
+  await sendWeChatPush(postCount, dateStr);
 }
 
 // 主函数

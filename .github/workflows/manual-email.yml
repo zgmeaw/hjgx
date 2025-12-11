@@ -28,5 +28,8 @@ jobs:
           QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
           # 数据加密密钥（必需，用于解密B记录）
           DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+          # 微信推送配置（可选）
+          WX_WORKER_URL: ${{ secrets.WX_WORKER_URL }}
+          WX_TOKEN: ${{ secrets.WX_TOKEN }}
         run: node scripts/send_email_manual.js
 
