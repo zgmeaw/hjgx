@@ -7,7 +7,7 @@ const CONFIG_FILE = path.join(__dirname, '../data/config.enc');
 
 // 默认配置
 const DEFAULT_CONFIG = {
-  emailEnabled: 'on',      // 定时邮箱发送：on/off
+  emailEnabled: 'off',      // 定时邮箱发送：on/off
   crawlerEnabled: 'on',   // 爬虫功能：on/off
   wechatEnabled: 'on'     // wx推送功能：on/off
 };
