@@ -87,9 +87,74 @@ jobs:
           CONFIG_JSON: ${{ toJSON(github.event.client_payload.config) }}
           DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
 
+      - name: Update index.html with new config
+        run: |
+          # 更新 index.html 中的 window.currentConfig
+          node -e "
+          const fs = require('fs');
+          const crypto = require('crypto');
+          
+          // 读取配置
+          const configFile = 'data/config.enc';
+          const key = process.env.DATA_ENCRYPT_KEY;
+          
+          if (!fs.existsSync(configFile)) {
+            console.log('ℹ️ 配置文件不存在，跳过更新 index.html');
+            process.exit(0);
+          }
+          
+          // 解密配置
+          const fileContent = fs.readFileSync(configFile, 'utf-8');
+          const parts = fileContent.split(':');
+          if (parts.length !== 2) {
+            console.log('ℹ️ 配置文件格式错误，跳过更新 index.html');
+            process.exit(0);
+          }
+          
+          const iv = Buffer.from(parts[0], 'hex');
+          const encrypted = Buffer.from(parts[1], 'hex');
+          const keyHash = crypto.createHash('sha256').update(key).digest();
+          const decipher = crypto.createDecipheriv('aes-256-cbc', keyHash, iv);
+          let decrypted = decipher.update(encrypted);
+          decrypted = Buffer.concat([decrypted, decipher.final()]);
+          const config = JSON.parse(decrypted.toString());
+          
+          // 读取 index.html
+          if (!fs.existsSync('index.html')) {
+            console.log('ℹ️ index.html 不存在，跳过更新');
+            process.exit(0);
+          }
+          
+          let html = fs.readFileSync('index.html', 'utf-8');
+          
+          // 查找并替换 window.currentConfig
+          const configJson = JSON.stringify(config);
+          const regex = /window\.currentConfig\s*=\s*\{[^}]*\}/;
+          
+          if (regex.test(html)) {
+            html = html.replace(regex, \`window.currentConfig = \${configJson}\`);
+            fs.writeFileSync('index.html', html, 'utf-8');
+            console.log('✓ 已更新 index.html 中的配置');
+          } else {
+            console.log('ℹ️ 未找到 window.currentConfig，尝试在 script 标签中添加');
+            // 如果找不到，尝试在最后的 script 标签前添加
+            const scriptRegex = /(<script[^>]*>[\s\S]*?)(<\/script>[\s\S]*<\/body>)/;
+            if (scriptRegex.test(html)) {
+              html = html.replace(scriptRegex, \`\$1    window.currentConfig = \${configJson};\\n  \$2\`);
+              fs.writeFileSync('index.html', html, 'utf-8');
+              console.log('✓ 已在 index.html 中添加配置');
+            } else {
+              console.log('⚠️ 无法更新 index.html，请手动运行 update.js 重新生成');
+            }
+          }
+          "
+        env:
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+
       - name: Commit & push
         run: |
           git config user.name "github-actions"
           git config user.email "action@github.com"
           git add data/config.enc
+          git add index.html 2>/dev/null || true
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update config from web interface" && git push)
