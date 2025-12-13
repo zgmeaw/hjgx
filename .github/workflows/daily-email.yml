@@ -19,13 +19,19 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Send email and WeChat push
+      - name: Send email
         env:
           QQ_MAIL: ${{ secrets.QQ_MAIL }}
           QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
           # 数据加密密钥（必需，用于解密A记录）
           DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+        run: node scripts/send_email.js
+
+      - name: Send WeChat push
+        env:
+          # 数据加密密钥（必需，用于解密A记录）
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
           # 微信推送配置（可选）
           WX_WORKER_URL: ${{ secrets.WX_WORKER_URL }}
           WX_TOKEN: ${{ secrets.WX_TOKEN }}
-        run: node scripts/send_email.js
+        run: node scripts/send_wechat.js

@@ -3,9 +3,7 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const https = require('https');
-const http = require('http');
-const { sendWeChatPush } = require('./send_email');
+const { sendWeChatPush } = require('./send_wechat');
 
 // 转义HTML特殊字符
 function escapeHtml(text) {
@@ -227,14 +225,8 @@ async function sendEmail() {
     process.exit(1);
   }
   
-  // 发送微信推送（如果启用）
-  const dateStr = new Date().toLocaleDateString('zh-CN', { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric',
-    timeZone: 'Asia/Shanghai'
-  });
-  await sendWeChatPush(postCount, dateStr);
+  // 注意：微信推送已独立到 send_wechat.js，手动邮件不再自动发送微信推送
+  // 如需发送微信推送，请单独运行 send_wechat.js
 }
 
 // 主函数

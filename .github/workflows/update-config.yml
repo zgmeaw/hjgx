@@ -24,9 +24,24 @@ jobs:
           node -e "
           const crypto = require('crypto');
           const fs = require('fs');
-          const config = JSON.parse(process.env.CONFIG_JSON);
-          const key = process.env.DATA_ENCRYPT_KEY;
           
+          // 从环境变量获取配置 JSON 字符串
+          const configJsonStr = process.env.CONFIG_JSON;
+          if (!configJsonStr) {
+            console.error('❌ CONFIG_JSON 未设置');
+            process.exit(1);
+          }
+          
+          let config;
+          try {
+            config = JSON.parse(configJsonStr);
+          } catch (e) {
+            console.error('❌ 解析配置 JSON 失败:', e.message);
+            console.error('收到的 JSON:', configJsonStr);
+            process.exit(1);
+          }
+          
+          const key = process.env.DATA_ENCRYPT_KEY;
           if (!key) {
             console.error('❌ DATA_ENCRYPT_KEY 未设置');
             process.exit(1);
@@ -38,10 +53,20 @@ jobs:
             fs.mkdirSync(dataDir, { recursive: true });
           }
           
+          // 合并默认配置，确保所有字段都存在
+          const DEFAULT_CONFIG = {
+            emailEnabled: 'on',
+            crawlerEnabled: 'on',
+            wechatEnabled: 'on'
+          };
+          const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+          
+          console.log('配置内容:', JSON.stringify(mergedConfig, null, 2));
+          
           const keyHash = crypto.createHash('sha256').update(key).digest();
           const iv = crypto.randomBytes(16);
           const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
-          let encrypted = cipher.update(JSON.stringify(config), 'utf8', 'hex');
+          let encrypted = cipher.update(JSON.stringify(mergedConfig), 'utf8', 'hex');
           encrypted += cipher.final('hex');
           const result = iv.toString('hex') + ':' + encrypted;
           
