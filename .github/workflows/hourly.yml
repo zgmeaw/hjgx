@@ -6,11 +6,36 @@ on:
     # 北京时间 8, 10, 12, 14, 16, 18, 20, 22 点 = UTC 0, 2, 4, 6, 8, 10, 12, 14 点
     - cron: '0 0,2,4,6,8,10,12,14 * * *'   # 每两小时一次（排除晚上12点到早上8点）
 
-permissions:
-  contents: write         # 赋予写权限以便提交代码
-
 jobs:
+  check-config:
+    permissions:
+      contents: read       # 只需要读权限来检查配置
+    runs-on: ubuntu-latest
+    outputs:
+      crawler-enabled: ${{ steps.config.outputs.crawlerEnabled }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Check config status
+        id: config
+        env:
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+        run: node scripts/check_config.js
+
   update:
+    needs: check-config
+    if: needs.check-config.outputs.crawler-enabled == 'true'
+    permissions:
+      contents: write      # 赋予写权限以便提交代码
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

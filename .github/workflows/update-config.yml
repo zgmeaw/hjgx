@@ -54,12 +54,22 @@ jobs:
           }
           
           // 合并默认配置，确保所有字段都存在
+          // 注意：这里的默认配置应该与 scripts/config.js 中的 DEFAULT_CONFIG 保持一致
           const DEFAULT_CONFIG = {
             emailEnabled: 'on',
             crawlerEnabled: 'on',
             wechatEnabled: 'on'
           };
           const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+          
+          // 验证配置值
+          const validValues = ['on', 'off'];
+          if (!validValues.includes(mergedConfig.emailEnabled) || 
+              !validValues.includes(mergedConfig.crawlerEnabled) || 
+              !validValues.includes(mergedConfig.wechatEnabled)) {
+            console.error('❌ 配置值无效，必须是 "on" 或 "off"');
+            process.exit(1);
+          }
           
           console.log('配置内容:', JSON.stringify(mergedConfig, null, 2));
           
