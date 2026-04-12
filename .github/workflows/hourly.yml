@@ -1,0 +1,114 @@
+name: Hourly Update
+on:
+  workflow_dispatch:      # 允许手动点击运行
+  schedule:
+    # 每两小时运行一次，排除晚上12点到早上8点（北京时间）
+    # 北京时间 8, 10, 12, 14, 16, 18, 20, 22 点 = UTC 0, 2, 4, 6, 8, 10, 12, 14 点
+    - cron: '0 0,2,4,6,8,10,12,14 * * *'   # 每两小时一次（排除晚上12点到早上8点）
+
+jobs:
+  check-config:
+    permissions:
+      contents: read       # 只需要读权限来检查配置
+    runs-on: ubuntu-latest
+    outputs:
+      crawler-enabled: ${{ steps.config.outputs.crawlerEnabled }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Check config status
+        id: config
+        env:
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+        run: node scripts/check_config.js
+
+  update:
+    needs: check-config
+    if: needs.check-config.outputs.crawler-enabled == 'true'
+    permissions:
+      contents: write      # 赋予写权限以便提交代码
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: |
+          npm install
+          # 关键：显式安装 Puppeteer 对应的 Chrome
+          npx puppeteer browsers install chrome
+
+      - name: Run update script
+        run: node scripts/update.js
+        env:
+          # 告诉 Puppeteer 使用刚才下载的 Chrome
+          PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
+          # Google 搜索域名（必需，未设置时搜索按钮将不可用）
+          GOOGLE_SEARCH_DOMAIN: ${{ secrets.GOOGLE_SEARCH_DOMAIN }}
+          # 数据加密密钥（必需，用于加密A、B记录和 links.txt）
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+          # 网页密码（必需，用于网页访问保护）
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          # GitHub Personal Access Token（可选，用于网页自动更新链接）
+          PAT: ${{ secrets.PAT }}
+
+      # 如果脚本生成了 debug 图片，上传以便查看
+      - name: Upload Debug Artifacts
+        if: always() # 即使脚本报错也执行
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: |
+            *.jpg
+            *.html
+          retention-days: 3
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          # 提交 index.html、data 文件夹和 links.txt（如果存在）
+          git add index.html
+          git add data/
+          git add links.txt 2>/dev/null || true
+          # 如果配置文件是未加密的 JSON 格式，自动加密
+          if [ -f data/config.enc ]; then
+            node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const configPath = 'data/config.enc';
+            const key = process.env.DATA_ENCRYPT_KEY;
+            try {
+              const content = fs.readFileSync(configPath, 'utf-8');
+              // 尝试解析为 JSON（未加密格式）
+              JSON.parse(content);
+              // 如果是 JSON，说明未加密，需要加密
+              const config = JSON.parse(content);
+              const keyHash = crypto.createHash('sha256').update(key).digest();
+              const iv = crypto.randomBytes(16);
+              const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
+              let encrypted = cipher.update(JSON.stringify(config), 'utf8', 'hex');
+              encrypted += cipher.final('hex');
+              const result = iv.toString('hex') + ':' + encrypted;
+              fs.writeFileSync(configPath, result, 'utf-8');
+              console.log('✓ 已自动加密配置文件');
+            } catch (e) {
+              // 已经是加密格式或格式错误，跳过
+            }
+            " || true
+          fi
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update $(date)" && git push)
