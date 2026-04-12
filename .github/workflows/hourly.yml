@@ -1,5 +1,5 @@
 name: Hourly Update
-on:
+于:
   workflow_dispatch:      # 允许手动点击运行
   schedule:
     # 每两小时运行一次，排除晚上12点到早上8点（北京时间）
@@ -49,8 +49,8 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install
-          # 关键：显式安装 Puppeteer 对应的 Chrome
-          npx puppeteer browsers install chrome
+          # 通过启动一次 puppeteer 自动下载 Chrome
+          node -e "require('puppeteer').launch().then(b => b.close())"
 
       - name: Run update script
         run: node scripts/update.js
