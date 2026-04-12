@@ -1631,7 +1631,6 @@ function saveBloggersLatest(bloggers) {
       title: p.title,
       time: p.time,
       isToday: p.isToday,
-      images: p.images
     }))
   }));
   
