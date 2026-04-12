@@ -49,8 +49,8 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install
-          # 通过启动一次 puppeteer 自动下载 Chrome
-          node -e "require('puppeteer').launch().then(b => b.close())"
+          # 关键：显式安装 Puppeteer 对应的 Chrome
+          npx puppeteer browsers install chrome
 
       - name: Run update script
         run: node scripts/update.js

@@ -118,7 +118,6 @@ async function getBloggers() {
   
   // 启动浏览器配置
   const browser = await puppeteer.launch({
-	executablePath: '/usr/bin/chromium-browser',  // 新增这一行
     headless: "new", // 新版 headless 模式
     args: [
       '--no-sandbox', 
