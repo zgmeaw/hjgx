@@ -1597,7 +1597,7 @@ function decryptData(encryptedData, key) {
   return JSON.parse(decrypted.toString());
 }
 
-// 保存B记录：所有博主的最新3条帖子（用于手动发送和对比更新，加密保存）
+// 保存B记录：所有博主的最新3条帖子（不包含图片数据以减小体积）
 function saveBloggersLatest(bloggers) {
   const latestFile = path.join(__dirname, '../data/bloggers_latest.enc');
   const dataDir = path.join(__dirname, '../data');
@@ -1607,37 +1607,25 @@ function saveBloggersLatest(bloggers) {
     throw new Error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于数据加密');
   }
   
-  // 确保 data 目录存在
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   
-  // 读取现有的B记录（如果存在，用于对比）
-  let existingLatest = [];
-  if (fs.existsSync(latestFile)) {
-    try {
-      const encryptedData = fs.readFileSync(latestFile, 'utf-8');
-      existingLatest = decryptData(encryptedData, encryptKey);
-    } catch (e) {
-      console.log('⚠️ 读取现有B记录失败，将创建新记录');
-    }
-  }
-  
-  // 保存所有博主的最新3条帖子
+  // 构建数据，**移除 images 字段**以减小文件大小
   const latestData = bloggers.map(blogger => ({
     nickname: blogger.nickname,
     homepageUrl: blogger.homepageUrl,
     posts: blogger.posts.slice(0, 3).map(p => ({
       title: p.title,
       time: p.time,
-      isToday: p.isToday,
+      isToday: p.isToday
+      // 注意：images 字段被移除，不再保存
     }))
   }));
   
-  // 加密保存
   const encrypted = encryptData(latestData, encryptKey);
   fs.writeFileSync(latestFile, encrypted, 'utf-8');
-  console.log(`✓ 已加密保存 ${latestData.length} 个博主的最新帖子到 ${latestFile}`);
+  console.log(`✓ 已加密保存 ${latestData.length} 个博主的最新帖子（不含图片）到 ${latestFile}`);
   
   return latestData;
 }
