@@ -1,0 +1,162 @@
+name: Update Config
+on:
+  repository_dispatch:
+    types: [update-config]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+         lfs: true 
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update and encrypt config.enc
+        run: |
+          # 将配置对象转换为 JSON 并加密
+          node -e "
+          const crypto = require('crypto');
+          const fs = require('fs');
+          
+          // 从环境变量获取配置 JSON 字符串
+          const configJsonStr = process.env.CONFIG_JSON;
+          if (!configJsonStr) {
+            console.error('❌ CONFIG_JSON 未设置');
+            process.exit(1);
+          }
+          
+          let config;
+          try {
+            config = JSON.parse(configJsonStr);
+          } catch (e) {
+            console.error('❌ 解析配置 JSON 失败:', e.message);
+            console.error('收到的 JSON:', configJsonStr);
+            process.exit(1);
+          }
+          
+          const key = process.env.DATA_ENCRYPT_KEY;
+          if (!key) {
+            console.error('❌ DATA_ENCRYPT_KEY 未设置');
+            process.exit(1);
+          }
+          
+          // 确保 data 目录存在
+          const dataDir = 'data';
+          if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+          }
+          
+          // 合并默认配置，确保所有字段都存在
+          // 注意：这里的默认配置应该与 scripts/config.js 中的 DEFAULT_CONFIG 保持一致
+          const DEFAULT_CONFIG = {
+            emailEnabled: 'on',
+            crawlerEnabled: 'on',
+            wechatEnabled: 'on'
+          };
+          const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+          
+          // 验证配置值
+          const validValues = ['on', 'off'];
+          if (!validValues.includes(mergedConfig.emailEnabled) || 
+              !validValues.includes(mergedConfig.crawlerEnabled) || 
+              !validValues.includes(mergedConfig.wechatEnabled)) {
+            console.error('❌ 配置值无效，必须是 "on" 或 "off"');
+            process.exit(1);
+          }
+          
+          console.log('配置内容:', JSON.stringify(mergedConfig, null, 2));
+          
+          const keyHash = crypto.createHash('sha256').update(key).digest();
+          const iv = crypto.randomBytes(16);
+          const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
+          let encrypted = cipher.update(JSON.stringify(mergedConfig), 'utf8', 'hex');
+          encrypted += cipher.final('hex');
+          const result = iv.toString('hex') + ':' + encrypted;
+          
+          fs.writeFileSync('data/config.enc', result, 'utf-8');
+          console.log('✓ 已加密保存配置文件');
+          "
+        env:
+          CONFIG_JSON: ${{ toJSON(github.event.client_payload.config) }}
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+
+      - name: Update index.html with new config
+        run: |
+          # 更新 index.html 中的 window.currentConfig
+          node -e "
+          const fs = require('fs');
+          const crypto = require('crypto');
+          
+          // 读取配置
+          const configFile = 'data/config.enc';
+          const key = process.env.DATA_ENCRYPT_KEY;
+          
+          if (!fs.existsSync(configFile)) {
+            console.log('ℹ️ 配置文件不存在，跳过更新 index.html');
+            process.exit(0);
+          }
+          
+          // 解密配置
+          const fileContent = fs.readFileSync(configFile, 'utf-8');
+          const parts = fileContent.split(':');
+          if (parts.length !== 2) {
+            console.log('ℹ️ 配置文件格式错误，跳过更新 index.html');
+            process.exit(0);
+          }
+          
+          const iv = Buffer.from(parts[0], 'hex');
+          const encrypted = Buffer.from(parts[1], 'hex');
+          const keyHash = crypto.createHash('sha256').update(key).digest();
+          const decipher = crypto.createDecipheriv('aes-256-cbc', keyHash, iv);
+          let decrypted = decipher.update(encrypted);
+          decrypted = Buffer.concat([decrypted, decipher.final()]);
+          const config = JSON.parse(decrypted.toString());
+          
+          // 读取 index.html
+          if (!fs.existsSync('index.html')) {
+            console.log('ℹ️ index.html 不存在，跳过更新');
+            process.exit(0);
+          }
+          
+          let html = fs.readFileSync('index.html', 'utf-8');
+          
+          // 查找并替换 window.currentConfig
+          const configJson = JSON.stringify(config);
+          const regex = /window\.currentConfig\s*=\s*\{[^}]*\}/;
+          
+          if (regex.test(html)) {
+            html = html.replace(regex, \`window.currentConfig = \${configJson}\`);
+            fs.writeFileSync('index.html', html, 'utf-8');
+            console.log('✓ 已更新 index.html 中的配置');
+          } else {
+            console.log('ℹ️ 未找到 window.currentConfig，尝试在 script 标签中添加');
+            // 如果找不到，尝试在最后的 script 标签前添加
+            const scriptRegex = /(<script[^>]*>[\s\S]*?)(<\/script>[\s\S]*<\/body>)/;
+            if (scriptRegex.test(html)) {
+              html = html.replace(scriptRegex, \`\$1    window.currentConfig = \${configJson};\\n  \$2\`);
+              fs.writeFileSync('index.html', html, 'utf-8');
+              console.log('✓ 已在 index.html 中添加配置');
+            } else {
+              console.log('⚠️ 无法更新 index.html，请手动运行 update.js 重新生成');
+            }
+          }
+          "
+        env:
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          git add data/config.enc
+          git add index.html 2>/dev/null || true
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update config from web interface" && git push)

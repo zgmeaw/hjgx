@@ -1,0 +1,78 @@
+name: Daily Email
+on:
+  workflow_dispatch:      # 允许手动触发
+  schedule:
+    - cron: '0 14 * * *'  # UTC 14点 = 北京22点
+
+jobs:
+  check-config:
+    runs-on: ubuntu-latest
+    outputs:
+      email-enabled: ${{ steps.config.outputs.emailEnabled }}
+      wechat-enabled: ${{ steps.config.outputs.wechatEnabled }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Check config status
+        id: config
+        env:
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+        run: node scripts/check_config.js
+
+  send-email:
+    needs: check-config
+    if: needs.check-config.outputs.email-enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Send email
+        env:
+          QQ_MAIL: ${{ secrets.QQ_MAIL }}
+          QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
+          # 数据加密密钥（必需，用于解密A记录）
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+        run: node scripts/send_email.js
+
+  send-wechat:
+    needs: check-config
+    if: needs.check-config.outputs.wechat-enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Send WeChat push
+        env:
+          # 数据加密密钥（必需，用于解密A记录）
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+          # 微信推送配置（可选）
+          WX_WORKER_URL: ${{ secrets.WX_WORKER_URL }}
+          WX_TOKEN: ${{ secrets.WX_TOKEN }}
+        run: node scripts/send_wechat.js
