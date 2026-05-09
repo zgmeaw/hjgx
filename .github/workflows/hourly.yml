@@ -49,6 +49,8 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install
+          chmod +x node_modules/.bin/puppeteer
+          npx puppeteer browsers install chrome
 
       - name: Run update script
         run: node scripts/update.js
