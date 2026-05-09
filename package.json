@@ -4,3 +4,8 @@
     "nodemailer": "^6.9.8"
   }
 }
+{
+  "scripts": {
+    "postinstall": "puppeteer browsers install chrome"
+  }
+}
