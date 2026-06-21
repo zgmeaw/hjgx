@@ -588,7 +588,7 @@ function generateHTML(bloggers) {
     return `https://www.google.com/search?q=${bloggerId}&q=site%3A${encodeURIComponent(searchDomain)}`;
   };
   
-  // 美化 HTML 模板（带密码保护）
+// 美化 HTML 模板（已去除密码保护）
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -597,78 +597,6 @@ function generateHTML(bloggers) {
 <title>动态监控站</title>
 <link rel="stylesheet" href="style.css">
 <style>
-  .password-lock {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-  }
-  .password-form {
-    background: white;
-    padding: 40px;
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    max-width: 400px;
-    width: 90%;
-    text-align: center;
-  }
-  .password-form h2 {
-    margin-bottom: 20px;
-    color: #2d3748;
-    font-size: 24px;
-  }
-  .password-form p {
-    margin-bottom: 20px;
-    color: #718096;
-  }
-  .password-input {
-    width: 100%;
-    padding: 12px 16px;
-    font-size: 16px;
-    border: 2px solid #e2e8f0;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    box-sizing: border-box;
-    font-family: inherit;
-  }
-  .password-input:focus {
-    outline: none;
-    border-color: #667eea;
-  }
-  .password-btn {
-    width: 100%;
-    padding: 12px 24px;
-    font-size: 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s;
-  }
-  .password-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  }
-  .password-error {
-    color: #e53e3e;
-    margin-top: 12px;
-    font-size: 14px;
-    display: none;
-  }
-  .main-content {
-    display: none;
-  }
-  .main-content.unlocked {
-    display: block;
-  }
   .link-manager {
     display: none;
     position: fixed;
@@ -904,14 +832,12 @@ function generateHTML(bloggers) {
   let currentLinks = [];
   
   function showLinkManager() {
-    // 从全局变量中读取链接（由服务器端注入）
     if (window.currentBloggerLinks && window.currentBloggerLinks.length > 0) {
       currentLinks = window.currentBloggerLinks.map(item => ({
         name: item.name || '',
         url: item.url || ''
       }));
     } else {
-      // 如果没有，从页面中提取
       currentLinks = [];
       document.querySelectorAll('.card').forEach(card => {
         const linkEl = card.querySelector('.homepage-btn');
@@ -923,7 +849,6 @@ function generateHTML(bloggers) {
           });
         }
       });
-      // 去重
       const seen = new Set();
       currentLinks = currentLinks.filter(item => {
         if (seen.has(item.url)) return false;
@@ -932,24 +857,16 @@ function generateHTML(bloggers) {
       });
     }
     
-    // 如果没有找到链接，初始化一个空对象
     if (currentLinks.length === 0) {
       currentLinks = [{ name: '', url: '' }];
     }
     
-    // 检查是否已保存 Token
     const savedToken = localStorage.getItem('github_pat');
     const tokenSection = document.getElementById('github-token-section');
     if (savedToken) {
-      // 已保存 Token，隐藏输入框
-      if (tokenSection) {
-        tokenSection.style.display = 'none';
-      }
+      if (tokenSection) tokenSection.style.display = 'none';
     } else {
-      // 未保存 Token，显示输入框
-      if (tokenSection) {
-        tokenSection.style.display = 'block';
-      }
+      if (tokenSection) tokenSection.style.display = 'block';
     }
     
     renderLinkManager();
@@ -965,20 +882,12 @@ function generateHTML(bloggers) {
       return;
     }
     
-    // 保存到 localStorage
     localStorage.setItem('github_pat', token);
     alert('✓ Token 已保存到浏览器！\\n\\n下次使用时将自动使用，无需再次输入。');
     
-    // 隐藏输入框
     const tokenSection = document.getElementById('github-token-section');
-    if (tokenSection) {
-      tokenSection.style.display = 'none';
-    }
-    
-    // 清空输入框
-    if (tokenInput) {
-      tokenInput.value = '';
-    }
+    if (tokenSection) tokenSection.style.display = 'none';
+    if (tokenInput) tokenInput.value = '';
   }
   
   function hideLinkManager() {
@@ -1004,7 +913,6 @@ function generateHTML(bloggers) {
   function addLink() {
     currentLinks.push({ name: '', url: '' });
     renderLinkManager();
-    // 聚焦到新添加的URL输入框
     const newInput = document.getElementById('url-' + (currentLinks.length - 1));
     if (newInput) newInput.focus();
   }
@@ -1015,15 +923,11 @@ function generateHTML(bloggers) {
   }
   
   function updateLinkName(index, value) {
-    if (currentLinks[index]) {
-      currentLinks[index].name = value.trim();
-    }
+    if (currentLinks[index]) currentLinks[index].name = value.trim();
   }
   
   function updateLinkUrl(index, value) {
-    if (currentLinks[index]) {
-      currentLinks[index].url = value.trim();
-    }
+    if (currentLinks[index]) currentLinks[index].url = value.trim();
   }
   
   // 配置管理功能
@@ -1034,12 +938,9 @@ function generateHTML(bloggers) {
   };
   
   function showConfigManager() {
-    // 从服务器获取当前配置（通过注入的方式）
     if (window.currentConfig) {
       currentConfig = { ...window.currentConfig };
     }
-    
-    // 更新界面显示
     updateConfigUI();
     document.getElementById('config-manager').classList.add('active');
   }
@@ -1061,7 +962,6 @@ function generateHTML(bloggers) {
   }
   
   async function saveConfig() {
-    // 获取用户输入的 Token
     const token = localStorage.getItem('github_pat') || '';
     
     if (!token || token.trim() === '') {
@@ -1077,7 +977,6 @@ function generateHTML(bloggers) {
     
     const finalToken = localStorage.getItem('github_pat');
     
-    // 通过 repository_dispatch 事件触发 workflow
     try {
       const repoInfo = window.repoInfo || {};
       let owner = repoInfo.owner;
@@ -1096,12 +995,9 @@ function generateHTML(bloggers) {
         owner = prompt('请输入 GitHub 用户名/组织名：');
         repo = prompt('请输入仓库名：');
         
-        if (!owner || !repo) {
-          throw new Error('无法确定仓库信息');
-        }
+        if (!owner || !repo) throw new Error('无法确定仓库信息');
       }
       
-      // 通过 repository_dispatch 触发 workflow
       const response = await fetch(\`https://api.github.com/repos/\${owner}/\${repo}/dispatches\`, {
         method: 'POST',
         headers: {
@@ -1126,7 +1022,6 @@ function generateHTML(bloggers) {
       hideConfigManager();
     } catch (error) {
       console.error('保存配置失败:', error);
-      // 如果 Token 无效，清除保存的 Token
       if (error.message.includes('Bad credentials') || error.message.includes('401')) {
         localStorage.removeItem('github_pat');
         alert('❌ Token 无效或已过期，已清除保存的 Token。\\n\\n请重新输入正确的 Token。');
@@ -1137,7 +1032,6 @@ function generateHTML(bloggers) {
   }
   
   async function saveLinks() {
-    // 过滤空链接（至少要有URL）
     const validLinks = currentLinks.filter(item => item && item.url && item.url.trim() !== '');
     
     if (validLinks.length === 0) {
@@ -1145,21 +1039,17 @@ function generateHTML(bloggers) {
       return;
     }
     
-    // 格式化链接数据（确保格式正确）
     const formattedLinks = validLinks.map(item => ({
       name: (item.name || '').trim(),
       url: item.url.trim()
     }));
     
-    // 从 localStorage 获取 Token
     let token = localStorage.getItem('github_pat');
     
-    // 如果没有保存的 Token，提示用户输入
     if (!token || token.trim() === '') {
       const tokenInput = prompt('请输入 GitHub Personal Access Token（需要 repo 权限）：\\n\\n提示：Token 将保存到浏览器中，下次使用时无需再次输入。\\n\\n如果不想输入 Token，可以取消并复制链接列表手动更新。');
       
       if (!tokenInput || tokenInput.trim() === '') {
-        // 如果没有输入 Token，复制到剪贴板
         const linksText = formattedLinks.map(item => item.url).join('\\n');
         navigator.clipboard.writeText(linksText).then(() => {
           alert('✓ 链接已复制到剪贴板！\\n\\n请手动更新 links.txt 文件。');
@@ -1169,19 +1059,16 @@ function generateHTML(bloggers) {
         return;
       }
       
-      // 保存 Token 到 localStorage
       token = tokenInput.trim();
       localStorage.setItem('github_pat', token);
     }
     
-    // 使用 GitHub API 自动更新
     try {
       await updateLinksViaGitHubAPI(token, formattedLinks);
       alert('✓ 链接已成功更新到 GitHub！\\n\\n文件将在几秒内自动更新，下次运行时会自动加密。\\n\\n提示：新添加的链接名称暂时为空，等下一次自动执行爬取任务时会自动补上对应的名字。');
       hideLinkManager();
     } catch (error) {
       console.error('GitHub API 更新失败:', error);
-      // 如果 Token 无效，清除保存的 Token
       if (error.message.includes('Bad credentials') || error.message.includes('401')) {
         localStorage.removeItem('github_pat');
         alert('❌ Token 无效或已过期，已清除保存的 Token。\\n\\n请重新输入正确的 Token。');
@@ -1192,39 +1079,30 @@ function generateHTML(bloggers) {
   }
   
   async function updateLinksViaGitHubAPI(token, linksArray) {
-    // 优先使用注入的仓库信息
     const repoInfo = window.repoInfo || {};
     let owner = repoInfo.owner;
     let repo = repoInfo.repo;
     
-    // 如果注入的信息不完整，尝试从 URL 推断
     if (!owner || !repo) {
-      // 假设页面托管在 GitHub Pages，URL 格式可能是：https://username.github.io/repo-name/
       const repoMatch = window.location.hostname.match(/([^.]+)\.github\.io/);
       if (repoMatch) {
         owner = owner || repoMatch[1];
         const pathParts = window.location.pathname.split('/').filter(p => p);
-        repo = repo || pathParts[0] || 'hjgx'; // 默认仓库名
+        repo = repo || pathParts[0] || 'hjgx';
       }
     }
     
-    // 如果还是无法确定，提示用户输入
     if (!owner || !repo) {
       owner = owner || prompt('请输入 GitHub 用户名/组织名：');
       repo = repo || prompt('请输入仓库名：');
       
-      if (!owner || !repo) {
-        throw new Error('无法确定仓库信息，请手动输入');
-      }
+      if (!owner || !repo) throw new Error('无法确定仓库信息，请手动输入');
     }
     
-    // 使用 repository_dispatch 事件触发 workflow，而不是直接更新文件
-    // 这样 Token 不会暴露，workflow 会使用 Secret 中的密钥来加密
     return await triggerWorkflow(token, owner, repo, linksArray);
   }
   
   async function triggerWorkflow(token, owner, repo, linksArray) {
-    // 通过 repository_dispatch 事件触发 workflow
     const response = await fetch(\`https://api.github.com/repos/\${owner}/\${repo}/dispatches\`, {
       method: 'POST',
       headers: {
@@ -1247,52 +1125,9 @@ function generateHTML(bloggers) {
     
     return { success: true };
   }
-  
-  function checkPassword() {
-    const password = document.getElementById('page-password').value;
-    const correctPassword = '${escapeJsString(pagePassword)}';
-    
-    if (password === correctPassword) {
-      document.getElementById('password-lock').style.display = 'none';
-      document.getElementById('main-content').classList.add('unlocked');
-      // 保存到sessionStorage，刷新页面后仍然解锁
-      sessionStorage.setItem('pageUnlocked', 'true');
-    } else {
-      document.getElementById('password-error').style.display = 'block';
-      document.getElementById('page-password').value = '';
-    }
-  }
-  
-  // 页面加载时检查是否已解锁
-  window.addEventListener('DOMContentLoaded', function() {
-    if (sessionStorage.getItem('pageUnlocked') === 'true') {
-      document.getElementById('password-lock').style.display = 'none';
-      document.getElementById('main-content').classList.add('unlocked');
-    }
-    
-    // 支持回车键提交
-    const input = document.getElementById('page-password');
-    if (input) {
-      input.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-          checkPassword();
-        }
-      });
-      input.focus();
-    }
-  });
 </script>
 </head>
 <body>
-<div class="password-lock" id="password-lock">
-  <div class="password-form">
-    <h2>🔒 网站已加密</h2>
-    <p>请输入密码访问</p>
-    <input type="password" id="page-password" class="password-input" placeholder="请输入密码" autofocus>
-    <button onclick="checkPassword()" class="password-btn">解锁访问</button>
-    <div id="password-error" class="password-error">❌ 密码错误，请重试</div>
-  </div>
-</div>
 <div class="main-content" id="main-content">
 <header>
   <h1>🌊 动态监控站</h1>
