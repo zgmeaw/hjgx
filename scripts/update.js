@@ -993,4 +993,431 @@ function generateHTML(bloggers) {
   async function updateLinksViaGitHubAPI(token, linksArray) {
     const repoInfo = window.repoInfo || {};
     let owner = repoInfo.owner;
-    let repo = 
+    let repo = repoInfo.repo;
+    
+    if (!owner || !repo) {
+      const repoMatch = window.location.hostname.match(/([^.]+)\.github\.io/);
+      if (repoMatch) {
+        owner = owner || repoMatch[1];
+        const pathParts = window.location.pathname.split('/').filter(p => p);
+        repo = repo || pathParts[0] || 'hjgx';
+      }
+    }
+    
+    if (!owner || !repo) {
+      owner = owner || prompt('请输入 GitHub 用户名/组织名：');
+      repo = repo || prompt('请输入仓库名：');
+      
+      if (!owner || !repo) throw new Error('无法确定仓库信息，请手动输入');
+    }
+    
+    return await triggerWorkflow(token, owner, repo, linksArray);
+  }
+  
+  async function triggerWorkflow(token, owner, repo, linksArray) {
+    const response = await fetch(\`https://api.github.com/repos/\${owner}/\${repo}/dispatches\`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': \`token \${token}\`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        event_type: 'update-links',
+        client_payload: {
+          links: linksArray
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: '触发 workflow 失败' }));
+      throw new Error(error.message || '触发 workflow 失败');
+    }
+    
+    return { success: true };
+  }
+</script>
+</head>
+<body>
+<div class="main-content" id="main-content">
+<header>
+  <h1>🌊 动态监控站</h1>
+  <p class="update-time">最后更新：${now}</p>
+  <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+    <button id="manage-links-btn" onclick="showLinkManager()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; cursor: pointer; font-size: 14px;">🔧 管理链接</button>
+    <button id="manage-config-btn" onclick="showConfigManager()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; cursor: pointer; font-size: 14px;">⚙️ 功能配置</button>
+  </div>
+</header>
+<div class="container">`;
+
+  const currentBloggerLinks = bloggers.map(b => ({
+    name: b.nickname || '',
+    url: b.homepageUrl
+  })).filter(item => item.url);
+  
+  const allLinksData = getBloggerLinks();
+  const mergedLinks = allLinksData.map(item => {
+    const blogger = bloggers.find(b => b.homepageUrl === item.url);
+    return {
+      name: blogger ? blogger.nickname : (item.name || ''),
+      url: item.url
+    };
+  });
+  
+  const repoOwner = process.env.GITHUB_REPOSITORY_OWNER || '';
+  const repoName = process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : '';
+  
+  const { getConfig } = require('./config');
+  const currentConfig = getConfig();
+  
+  html += `<script>
+    window.currentBloggerLinks = ${JSON.stringify(mergedLinks)};
+    window.repoInfo = {
+      owner: ${JSON.stringify(repoOwner)},
+      repo: ${JSON.stringify(repoName)}
+    };
+    window.currentConfig = ${JSON.stringify(currentConfig)};
+  </script>`;
+
+  const parseDateFromTime = (timeStr) => {
+    if (!timeStr || timeStr === '未知时间') return new Date(0);
+    const dateMatch = timeStr.match(/(\d{1,2})[-\/](\d{1,2})/);
+    if (dateMatch) {
+      const month = parseInt(dateMatch[1]);
+      const day = parseInt(dateMatch[2]);
+      const now = new Date();
+      const year = now.getFullYear();
+      const postDate = new Date(year, month - 1, day);
+      if (postDate > now) {
+        return new Date(year - 1, month - 1, day);
+      }
+      return postDate;
+    }
+    return new Date(0);
+  };
+
+  const sortedBloggers = [...bloggers].sort((a, b) => {
+    const getLatestDate = (blogger) => {
+      if (!blogger.posts || blogger.posts.length === 0) return new Date(0);
+      let latestDate = new Date(0);
+      blogger.posts.forEach(post => {
+        const postDate = parseDateFromTime(post.time);
+        if (postDate > latestDate) latestDate = postDate;
+      });
+      return latestDate;
+    };
+    
+    const dateA = getLatestDate(a);
+    const dateB = getLatestDate(b);
+    return dateB.getTime() - dateA.getTime();
+  });
+
+  let hasNew = false;
+  sortedBloggers.forEach((blogger) => {
+    const { nickname, posts, homepageUrl } = blogger;
+    const newCount = posts.filter(p => p.isToday).length;
+    if (newCount > 0) hasNew = true;
+    
+    if (posts.length === 0) {
+      const bloggerId = extractBloggerId(homepageUrl);
+      const googleSearchUrl = generateGoogleSearchUrl(bloggerId);
+      
+      html += `<div class="card">
+        <div class="card-header">
+          <div class="name-wrapper">
+            <span class="name">${escapeHtml(nickname)}</span>
+            <a href="${escapeHtml(homepageUrl || '#')}" target="_blank" class="homepage-btn" title="访问博主主页">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </a>
+            <a href="${escapeHtml(googleSearchUrl)}" target="_blank" class="search-btn" title="Google搜索">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+            </a>
+          </div>
+        </div>
+        <div class="post-list">
+          <div class="empty">暂无获取到数据 (可能需要登录或反爬虫限制)</div>
+        </div>
+      </div>`;
+      return;
+    }
+    
+    const bloggerId = extractBloggerId(homepageUrl);
+    const googleSearchUrl = generateGoogleSearchUrl(bloggerId);
+    
+    html += `<div class="card">
+      <div class="card-header">
+        <div class="name-wrapper">
+          <span class="name">${escapeHtml(nickname)}</span>
+          <a href="${escapeHtml(homepageUrl || '#')}" target="_blank" class="homepage-btn" title="访问博主主页">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+          <a href="${escapeHtml(googleSearchUrl)}" target="_blank" class="search-btn" title="Google搜索">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+          </a>
+        </div>
+        ${newCount > 0 ? '<span class="badge">✨ 今日更新</span>' : ''}
+      </div>
+      <div class="post-list">`;
+
+      posts.forEach(p => {
+        const timeClass = p.isToday ? 'time new' : 'time';
+      
+      let imgHtml = '';
+      if (p.images && Array.isArray(p.images) && p.images.length > 0) {
+        const firstImg = p.images[0];
+        if (firstImg && firstImg.trim() !== '') {
+          let imgSrc = firstImg;
+          if (!imgSrc.startsWith('data:image')) {
+            imgSrc = imgSrc.replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          }
+          imgHtml = `<div class="thumb">
+            <img src="${imgSrc}" alt="${escapeHtml(p.title)}" loading="lazy" onerror="this.style.display='none'; this.parentElement.style.display='none';">
+          </div>`;
+        }
+      }
+      
+        html += `
+        <div class="post-item">
+          <div class="post-info">
+            <div class="post-title">${escapeHtml(p.title)}</div>
+            <div class="${timeClass}">📅 ${escapeHtml(p.time || '未知时间')}</div>
+          </div>
+          ${imgHtml}
+        </div>`;
+      });
+    
+    html += `</div></div>`;
+  });
+
+  html += `</div>
+  <footer>
+    <p>2025</a></p>
+  </footer>
+  
+  <!-- 链接管理界面 -->
+  <div class="link-manager" id="link-manager">
+    <div class="link-manager-content">
+      <div class="link-manager-header">
+        <h2>🔧 管理博主链接</h2>
+        <button class="btn-close" onclick="hideLinkManager()">关闭</button>
+      </div>
+      <div class="link-manager-info">
+        <strong>使用说明：</strong><br>
+        1. 点击"添加链接"按钮添加新链接<br>
+        2. 填写博主名称和链接地址<br>
+        3. 新添加的链接名称可以为空，等下一次自动执行爬取任务时会自动补上<br>
+        4. 点击"删除"按钮删除链接<br>
+        5. 首次使用需要输入 GitHub Token，之后会自动保存到浏览器中<br>
+        6. 点击"保存"按钮保存链接<br>
+        <br>
+        <strong>💡 提示：</strong>链接和名称会保存到 links.txt 文件（加密存储）。Token 仅存储在您的浏览器中，不会上传到服务器。
+      </div>
+      <div class="github-token-section" id="github-token-section" style="display: none;">
+        <label for="github-token">GitHub Personal Access Token（首次使用需要输入）：</label>
+        <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+        <button class="btn-save-token" onclick="saveToken()" style="margin-top: 8px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">保存 Token</button>
+        <small style="display: block; margin-top: 8px; color: #718096; font-size: 12px;">💡 Token 仅存储在您的浏览器中，不会上传到服务器。创建 Token 时需勾选 "repo" 权限。</small>
+      </div>
+      <button class="btn-add" onclick="addLink()">➕ 添加链接</button>
+      <div class="link-list" id="link-list"></div>
+      <div class="link-manager-actions">
+        <button class="btn-save" onclick="saveLinks()">💾 保存链接</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 配置管理界面 -->
+  <div class="config-manager" id="config-manager">
+    <div class="config-manager-content">
+      <div class="link-manager-header">
+        <h2>⚙️ 功能配置</h2>
+        <button class="btn-close" onclick="hideConfigManager()">关闭</button>
+      </div>
+      <div class="link-manager-info" style="margin-bottom: 20px;">
+        <strong>功能说明：</strong><br>
+        1. 定时邮箱发送：控制每晚十点是否自动发送邮件<br>
+        2. 爬虫功能：控制是否执行爬取任务（总开关）<br>
+        3. 微信推送功能：控制是否发送微信推送消息<br>
+        <br>
+        <strong>💡 提示：</strong>配置会保存到加密文件中，修改后立即生效。
+      </div>
+      <div class="config-item">
+        <div class="config-item-label">
+          <strong>定时邮箱发送</strong>
+          <small>控制每晚十点是否自动发送邮件通知</small>
+        </div>
+        <div class="config-toggle" id="toggle-email" onclick="toggleConfig('email')">
+          <div class="config-toggle-slider"></div>
+        </div>
+      </div>
+      <div class="config-item">
+        <div class="config-item-label">
+          <strong>爬虫功能</strong>
+          <small>控制是否执行爬取任务（总开关）</small>
+        </div>
+        <div class="config-toggle" id="toggle-crawler" onclick="toggleConfig('crawler')">
+          <div class="config-toggle-slider"></div>
+        </div>
+      </div>
+      <div class="config-item">
+        <div class="config-item-label">
+          <strong>微信推送功能</strong>
+          <small>控制是否发送微信推送消息</small>
+        </div>
+        <div class="config-toggle" id="toggle-wechat" onclick="toggleConfig('wechat')">
+          <div class="config-toggle-slider"></div>
+        </div>
+      </div>
+      <div class="link-manager-actions">
+        <button class="btn-save" onclick="saveConfig()">💾 保存配置</button>
+      </div>
+    </div>
+  </div>
+</div>
+  </body></html>`;
+
+  fs.writeFileSync('index.html', html);
+  console.log('HTML 生成完毕');
+}
+
+// 加密函数
+function encryptData(data, key) {
+  const keyHash = crypto.createHash('sha256').update(key).digest();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', keyHash, iv);
+  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+// 解密函数
+function decryptData(encryptedData, key) {
+  const parts = encryptedData.split(':');
+  if (parts.length !== 2) {
+    throw new Error('Invalid encrypted data format');
+  }
+  const iv = Buffer.from(parts[0], 'hex');
+  const encrypted = Buffer.from(parts[1], 'hex');
+  const keyHash = crypto.createHash('sha256').update(key).digest();
+  const decipher = crypto.createDecipheriv('aes-256-cbc', keyHash, iv);
+  let decrypted = decipher.update(encrypted);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return JSON.parse(decrypted.toString());
+}
+
+function saveBloggersLatest(bloggers) {
+  const latestFile = path.join(__dirname, '../data/bloggers_latest.enc');
+  const dataDir = path.join(__dirname, '../data');
+  const encryptKey = process.env.DATA_ENCRYPT_KEY;
+  
+  if (!encryptKey) {
+    throw new Error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于数据加密');
+  }
+  
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  
+  const latestData = bloggers.map(blogger => ({
+    nickname: blogger.nickname,
+    homepageUrl: blogger.homepageUrl,
+    posts: blogger.posts.slice(0, 3).map(p => ({
+      title: p.title,
+      time: p.time,
+      isToday: p.isToday
+    }))
+  }));
+  
+  const encrypted = encryptData(latestData, encryptKey);
+  fs.writeFileSync(latestFile, encrypted, 'utf-8');
+  console.log(`✓ 已加密保存 ${latestData.length} 个博主的最新帖子（不含图片）到 ${latestFile}`);
+  
+  return latestData;
+}
+
+function saveDailyUpdates(bloggers) {
+  const now = new Date();
+  const beijingTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const year = beijingTime.getFullYear();
+  const month = String(beijingTime.getMonth() + 1).padStart(2, '0');
+  const day = String(beijingTime.getDate()).padStart(2, '0');
+  const today = `${year}-${month}-${day}`;
+  const dailyFile = path.join(__dirname, `../data/daily_${today}.enc`);
+  const dataDir = path.join(__dirname, '../data');
+  const encryptKey = process.env.DATA_ENCRYPT_KEY;
+  
+  if (!encryptKey) {
+    throw new Error('❌ 必须设置环境变量 DATA_ENCRYPT_KEY 用于数据加密');
+  }
+  
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  
+  const todayUpdates = bloggers
+    .filter(blogger => {
+      const hasTodayPosts = blogger.posts.some(p => p.isToday);
+      return hasTodayPosts && blogger.posts.length > 0;
+    })
+    .map(blogger => ({
+      nickname: blogger.nickname,
+      homepageUrl: blogger.homepageUrl,
+      posts: blogger.posts
+        .filter(p => p.isToday)
+        .map(p => ({
+        title: p.title,
+        time: p.time,
+        isToday: p.isToday,
+        images: p.images
+      }))
+    }));
+  
+  if (todayUpdates.length > 0) {
+    const encrypted = encryptData(todayUpdates, encryptKey);
+    fs.writeFileSync(dailyFile, encrypted, 'utf-8');
+    console.log(`✓ 已加密保存 ${todayUpdates.length} 个博主的今日更新到 ${dailyFile}`);
+  } else {
+    if (fs.existsSync(dailyFile)) {
+      fs.unlinkSync(dailyFile);
+      console.log(`✓ 今日无更新，已删除 ${dailyFile}`);
+    } else {
+      console.log('✓ 今日无更新');
+    }
+  }
+  
+  return todayUpdates.length > 0;
+}
+
+async function main() {
+  const { isCrawlerEnabled } = require('./config');
+  if (!isCrawlerEnabled()) {
+    console.log('ℹ️ 爬虫功能已关闭，跳过执行');
+    return;
+  }
+  
+  const bloggers = await getBloggers();
+  generateHTML(bloggers);
+  saveBloggersLatest(bloggers);
+  saveDailyUpdates(bloggers);
+}
+
+if (require.main === module) {
+  main().catch(console.error);
+}
+
+module.exports = { getBloggers, generateHTML, saveDailyUpdates, saveBloggersLatest };
