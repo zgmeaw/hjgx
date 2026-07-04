@@ -92,7 +92,7 @@ async function sendWeChatPush() {
   const content = `今日有 ${postCount} 条新内容\n\n${dateStr}\n\n请访问网站查看详情`;
   
   // 使用默认网站地址
-  //const siteUrl = 'https://hj.meaw.top';
+  const siteUrl = 'https://meaw.top';
   
   // 构建请求 URL（使用 GET 方式）
   // WX_WORKER_URL 应该是完整的 URL，例如：https://your-worker.workers.dev/wxsend
