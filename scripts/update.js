@@ -500,7 +500,10 @@ function generateHTML(bloggers) {
     return `https://www.google.com/search?q=${bloggerId}&q=site%3A${encodeURIComponent(searchDomain)}`;
   };
   
-  // 美化 HTML 模板（已去除密码保护）
+  // 网页访问密码：优先使用 GitHub secret（EMAIL_PASSWORD），未设置时回退到默认密码
+  const accessPasswordHash = crypto.createHash('sha256').update(process.env.EMAIL_PASSWORD || '1008611').digest('hex');
+
+  // 美化 HTML 模板
   let html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1129,9 +1132,9 @@ function generateHTML(bloggers) {
   </div>
 </div>
 <script>
-  // ===== 访问密码（默认密码：1008611）=====
-  // 修改密码：将 PW_HASH 换成新密码的 SHA-256 值即可
-  var PW_HASH = '3eb50c7c9fd2ddc035c01ab3394e045aea7d2d066c381937021e87a0e3cdb501';
+  // ===== 访问密码 =====
+  // 密码在构建时注入（来自 GitHub secret EMAIL_PASSWORD，未设置时默认）
+  var PW_HASH = '${accessPasswordHash}';
 
   function sha256(ascii) {
     function rightRotate(value, amount) { return (value >>> amount) | (value << (32 - amount)); }
