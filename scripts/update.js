@@ -738,10 +738,75 @@ function generateHTML(bloggers) {
   .config-toggle.active .config-toggle-slider {
     transform: translateX(30px);
   }
+  .pw-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .pw-gate.hidden { display: none; }
+  .pw-gate-box {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 20px;
+    padding: 40px 36px;
+    max-width: 400px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  .pw-gate-box h1 { margin: 0 0 6px; font-size: 1.6rem; color: #fff; }
+  .pw-gate-box .pw-sub { margin: 0 0 20px; color: rgba(255, 255, 255, 0.85); font-size: 14px; }
+  .pw-gate-box input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 10px;
+    font-size: 15px;
+    box-sizing: border-box;
+    outline: none;
+    text-align: center;
+  }
+  .pw-gate-box button {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: #ff6b9d;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .pw-gate-box button:hover { background: #ff8fb3; }
+  .pw-error {
+    display: none;
+    margin: 12px 0 0;
+    color: #ffd6d6;
+    font-size: 13px;
+  }
 </style>
 <script>
   // 链接管理功能
   let currentLinks = [];
+
+  // 安全的 localStorage 封装（部分浏览器/隐私模式会禁用 localStorage，直接访问会抛异常导致按钮无响应）
+  function safeGetItem(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function safeSetItem(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) {}
+  }
+  function safeRemoveItem(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
   
   function showLinkManager() {
     if (window.currentBloggerLinks && window.currentBloggerLinks.length > 0) {
@@ -773,7 +838,7 @@ function generateHTML(bloggers) {
       currentLinks = [{ name: '', url: '' }];
     }
     
-    const savedToken = localStorage.getItem('github_pat');
+    const savedToken = safeGetItem('github_pat');
     const tokenSection = document.getElementById('github-token-section');
     if (savedToken) {
       if (tokenSection) tokenSection.style.display = 'none';
@@ -794,7 +859,7 @@ function generateHTML(bloggers) {
       return;
     }
     
-    localStorage.setItem('github_pat', token);
+    safeSetItem('github_pat', token);
     alert('✓ Token 已保存到浏览器！\\n\\n下次使用时将自动使用，无需再次输入。');
     
     const tokenSection = document.getElementById('github-token-section');
@@ -874,7 +939,7 @@ function generateHTML(bloggers) {
   }
   
   async function saveConfig() {
-    const token = localStorage.getItem('github_pat') || '';
+    const token = safeGetItem('github_pat') || '';
     
     if (!token || token.trim() === '') {
       const tokenInput = prompt('请输入 GitHub Personal Access Token（需要 repo 权限）：\\n\\n提示：Token 将保存到浏览器中，下次使用时无需再次输入。');
@@ -884,10 +949,10 @@ function generateHTML(bloggers) {
         return;
       }
       
-      localStorage.setItem('github_pat', tokenInput.trim());
+      safeSetItem('github_pat', tokenInput.trim());
     }
     
-    const finalToken = localStorage.getItem('github_pat');
+    const finalToken = safeGetItem('github_pat');
     
     try {
       const repoInfo = window.repoInfo || {};
@@ -935,7 +1000,7 @@ function generateHTML(bloggers) {
     } catch (error) {
       console.error('保存配置失败:', error);
       if (error.message.includes('Bad credentials') || error.message.includes('401')) {
-        localStorage.removeItem('github_pat');
+        safeRemoveItem('github_pat');
         alert('❌ Token 无效或已过期，已清除保存的 Token。\\n\\n请重新输入正确的 Token。');
       } else {
         alert('❌ 保存配置失败: ' + error.message + '\\n\\n请检查：\\n1. Token 是否正确\\n2. Token 是否有 repo 权限\\n3. 网络连接是否正常');
@@ -956,7 +1021,7 @@ function generateHTML(bloggers) {
       url: item.url.trim()
     }));
     
-    let token = localStorage.getItem('github_pat');
+    let token = safeGetItem('github_pat');
     
     if (!token || token.trim() === '') {
       const tokenInput = prompt('请输入 GitHub Personal Access Token（需要 repo 权限）：\\n\\n提示：Token 将保存到浏览器中，下次使用时无需再次输入。\\n\\n如果不想输入 Token，可以取消并复制链接列表手动更新。');
@@ -972,7 +1037,7 @@ function generateHTML(bloggers) {
       }
       
       token = tokenInput.trim();
-      localStorage.setItem('github_pat', token);
+      safeSetItem('github_pat', token);
     }
     
     try {
@@ -982,7 +1047,7 @@ function generateHTML(bloggers) {
     } catch (error) {
       console.error('GitHub API 更新失败:', error);
       if (error.message.includes('Bad credentials') || error.message.includes('401')) {
-        localStorage.removeItem('github_pat');
+        safeRemoveItem('github_pat');
         alert('❌ Token 无效或已过期，已清除保存的 Token。\\n\\n请重新输入正确的 Token。');
       } else {
         alert('❌ 自动更新失败: ' + error.message + '\\n\\n请检查：\\n1. Token 是否正确\\n2. Token 是否有 repo 权限\\n3. 网络连接是否正常');
@@ -1037,9 +1102,129 @@ function generateHTML(bloggers) {
     
     return { success: true };
   }
+
+  // 确保函数在全局作用域可用（防止某些环境下内联 onclick 找不到函数）
+  window.showLinkManager = showLinkManager;
+  window.showConfigManager = showConfigManager;
+  window.hideLinkManager = hideLinkManager;
+  window.hideConfigManager = hideConfigManager;
+  window.saveToken = saveToken;
+  window.addLink = addLink;
+  window.deleteLink = deleteLink;
+  window.updateLinkName = updateLinkName;
+  window.updateLinkUrl = updateLinkUrl;
+  window.saveLinks = saveLinks;
+  window.saveConfig = saveConfig;
+  window.toggleConfig = toggleConfig;
 </script>
 </head>
 <body>
+<div class="pw-gate" id="pw-gate">
+  <div class="pw-gate-box">
+    <h1>🔒 访问验证</h1>
+    <p class="pw-sub">请输入访问密码后进入</p>
+    <input type="password" id="pw-input" placeholder="访问密码" autocomplete="off">
+    <button onclick="pwCheck()">进入站点</button>
+    <p class="pw-error" id="pw-error">❌ 密码错误，请重试</p>
+  </div>
+</div>
+<script>
+  // ===== 访问密码（默认密码：1008611）=====
+  // 修改密码：将 PW_HASH 换成新密码的 SHA-256 值即可
+  var PW_HASH = '3eb50c7c9fd2ddc035c01ab3394e045aea7d2d066c381937021e87a0e3cdb501';
+
+  function sha256(ascii) {
+    function rightRotate(value, amount) { return (value >>> amount) | (value << (32 - amount)); }
+    var mathPow = Math.pow;
+    var maxWord = mathPow(2, 32);
+    var lengthProperty = 'length';
+    var i, j;
+    var result = '';
+    var words = [];
+    var asciiBitLength = ascii[lengthProperty] * 8;
+    var hash = sha256.h = sha256.h || [];
+    var k = sha256.k = sha256.k || [];
+    var primeCounter = k[lengthProperty];
+    var isComposite = {};
+    for (var candidate = 2; primeCounter < 64; candidate++) {
+      if (!isComposite[candidate]) {
+        for (i = 0; i < 313; i += candidate) { isComposite[i] = candidate; }
+        hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
+        k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+      }
+    }
+    ascii += String.fromCharCode(128);
+    while (ascii[lengthProperty] % 64 - 56) ascii += String.fromCharCode(0);
+    for (i = 0; i < ascii[lengthProperty]; i++) {
+      j = ascii.charCodeAt(i);
+      if (j >> 8) return;
+      words[i >> 2] |= j << ((3 - i) % 4) * 8;
+    }
+    words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);
+    words[words[lengthProperty]] = (asciiBitLength);
+    for (j = 0; j < words[lengthProperty];) {
+      var w = words.slice(j, j += 16);
+      var oldHash = hash;
+      hash = hash.slice(0, 8);
+      for (i = 0; i < 64; i++) {
+        var w15 = w[i - 15], w2 = w[i - 2];
+        var a = hash[0], e = hash[4];
+        var temp1 = hash[7]
+          + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
+          + ((e & hash[5]) ^ ((~e) & hash[6]))
+          + k[i]
+          + (w[i] = (i < 16) ? w[i] : (
+              w[i - 16]
+              + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
+              + w[i - 7]
+              + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
+            ) | 0);
+        var temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
+          + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+        hash = [(temp1 + temp2) | 0].concat(hash);
+        hash[4] = (hash[4] + temp1) | 0;
+      }
+      for (i = 0; i < 8; i++) { hash[i] = (hash[i] + oldHash[i]) | 0; }
+    }
+    for (i = 0; i < 8; i++) {
+      for (j = 3; j + 1; j--) {
+        var b = (hash[i] >> (j * 8)) & 255;
+        result += ((b < 16) ? 0 : '') + b.toString(16);
+      }
+    }
+    return result;
+  }
+
+  function pwUnlock() {
+    var gate = document.getElementById('pw-gate');
+    if (gate) gate.classList.add('hidden');
+  }
+
+  function pwCheck() {
+    var input = document.getElementById('pw-input');
+    var err = document.getElementById('pw-error');
+    var value = input ? input.value : '';
+    if (sha256(value) === PW_HASH) {
+      try { sessionStorage.setItem('pw_ok', '1'); } catch (e) {}
+      pwUnlock();
+    } else {
+      if (err) err.style.display = 'block';
+      if (input) { input.value = ''; input.focus(); }
+    }
+  }
+
+  (function () {
+    try {
+      if (sessionStorage.getItem('pw_ok') === '1') { pwUnlock(); }
+    } catch (e) {}
+    var input = document.getElementById('pw-input');
+    if (input) {
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13) { pwCheck(); }
+      });
+    }
+  })();
+</script>
 <div class="main-content" id="main-content">
 <header>
   <h1>🌊 动态监控站</h1>
